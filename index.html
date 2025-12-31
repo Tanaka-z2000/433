@@ -151,10 +151,13 @@
                                             const diff = (data.ratio - target) * 100;
                                             const displayName = name === 'cash' ? '現金部位' : name;
                                             return (
-                                                <div key={name} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                                <div key={name} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm relative overflow-hidden">
                                                     <div>
                                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{displayName}</span>
-                                                        <div className="text-3xl font-black text-slate-800">{(data.ratio * 100).toFixed(1)}%</div>
+                                                        <div className="flex items-baseline gap-2">
+                                                            <div className="text-3xl font-black text-slate-800">{(data.ratio * 100).toFixed(1)}%</div>
+                                                            <div className="text-sm font-bold text-slate-400 tracking-tighter">${Math.round(data.amount).toLocaleString()}</div>
+                                                        </div>
                                                     </div>
                                                     <div className={`text-xs font-bold px-3 py-1.5 rounded-xl ${Math.abs(diff) < 2 ? 'bg-green-50 text-green-600' : 'bg-rose-50 text-rose-600'}`}>
                                                         {Math.abs(diff) < 2 ? '符合目標' : `${diff > 0 ? '超標' : '偏低'} ${Math.abs(diff).toFixed(1)}%`}
@@ -162,6 +165,11 @@
                                                 </div>
                                             );
                                         })}
+                                        {/* 總資產欄位 */}
+                                        <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 flex justify-between items-center shadow-sm">
+                                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">目前總市值 (Total Sum)</span>
+                                            <div className="text-xl font-black text-indigo-700">${Math.round(report.totalWealth).toLocaleString()}</div>
+                                        </div>
                                     </div>
                                 </section>
 
@@ -188,7 +196,12 @@
 
                                 {/* Target Amounts */}
                                 <section>
-                                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1 mb-3">預計再平衡後目標市值</h2>
+                                    <div className="flex justify-between items-end mb-3 px-1">
+                                        <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">預計再平衡後目標市值</h2>
+                                        <div className="text-[10px] font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded">
+                                            目標總額: ${Math.round(report.totalWealth).toLocaleString()}
+                                        </div>
+                                    </div>
                                     <div className="space-y-3">
                                         {Object.entries(report.post).map(([key, data]) => {
                                             const label = key === 'v662' ? '00662' : key === 'v670L' ? '00670L' : '現金部位';
@@ -201,7 +214,7 @@
                                                         </div>
                                                     </div>
                                                     <div className="text-right">
-                                                        <div className="text-[9px] font-bold text-indigo-600 px-2 py-0.5 bg-indigo-50 rounded inline-block">目標 {(data.ratio * 100).toFixed(0)}%</div>
+                                                        <div className="text-[9px] font-bold text-indigo-600 px-2 py-0.5 bg-indigo-50 rounded inline-block">目標佔比 {(data.ratio * 100).toFixed(0)}%</div>
                                                         <div className={`text-[11px] font-black mt-1.5 ${data.diff >= 0 ? 'text-green-600' : 'text-rose-500'}`}>
                                                             {data.diff >= 0 ? `加碼 $${Math.abs(Math.round(data.diff)).toLocaleString()}` : `減倉 $${Math.abs(Math.round(data.diff)).toLocaleString()}`}
                                                         </div>
