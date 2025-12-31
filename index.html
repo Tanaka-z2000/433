@@ -11,9 +11,9 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        /* 針對手機輸入框優化 */
+        /* Optimize number input for mobile */
         input[type="number"] {
-            font-size: 16px !important; /* 防止 iOS 自動縮放 */
+            font-size: 16px !important;
         }
         .no-scrollbar::-webkit-scrollbar {
             display: none;
@@ -62,8 +62,8 @@
 
                 const currentRatios = {
                     '00662': { ratio: v662 / totalWealth, amount: v662 },
-                    '00670L': { ratio: v670L / totalWealth, amount: v670L },
-                    'cash': { ratio: cash / totalWealth, amount: cash }
+                    '00670L (Nasdaq正2)': { ratio: v670L / totalWealth, amount: v670L },
+                    '現金部位': { ratio: cash / totalWealth, amount: cash }
                 };
 
                 // 核心邏輯：00662 只增不減 (或維持目標)，其餘部分按比例再平衡
@@ -138,6 +138,12 @@
                                     </div>
                                 ))}
                             </div>
+                            {report && (
+                                <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 flex justify-between items-center shadow-sm">
+                                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">目前總市值 (Total Sum)</span>
+                                    <div className="text-xl font-black text-indigo-700">${Math.round(report.totalWealth).toLocaleString()}</div>
+                                </div>
+                            )}
                         </section>
 
                         {report ? (
@@ -147,13 +153,13 @@
                                     <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1 mb-3">目前配置比例</h2>
                                     <div className="grid grid-cols-1 gap-3">
                                         {Object.entries(report.currentRatios).map(([name, data]) => {
-                                            const target = name === '00662' ? 0.4 : 0.3;
+                                            const targetMap = { '00662': 0.40, '00670L (Nasdaq正2)': 0.30, '現金部位': 0.30 };
+                                            const target = targetMap[name];
                                             const diff = (data.ratio - target) * 100;
-                                            const displayName = name === 'cash' ? '現金部位' : name;
                                             return (
-                                                <div key={name} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm relative overflow-hidden">
+                                                <div key={name} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm">
                                                     <div>
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{displayName}</span>
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{name}</span>
                                                         <div className="flex items-baseline gap-2">
                                                             <div className="text-3xl font-black text-slate-800">{(data.ratio * 100).toFixed(1)}%</div>
                                                             <div className="text-sm font-bold text-slate-400 tracking-tighter">${Math.round(data.amount).toLocaleString()}</div>
@@ -165,11 +171,6 @@
                                                 </div>
                                             );
                                         })}
-                                        {/* 總資產欄位 */}
-                                        <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 flex justify-between items-center shadow-sm">
-                                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">目前總市值 (Total Sum)</span>
-                                            <div className="text-xl font-black text-indigo-700">${Math.round(report.totalWealth).toLocaleString()}</div>
-                                        </div>
                                     </div>
                                 </section>
 
@@ -204,7 +205,7 @@
                                     </div>
                                     <div className="space-y-3">
                                         {Object.entries(report.post).map(([key, data]) => {
-                                            const label = key === 'v662' ? '00662' : key === 'v670L' ? '00670L' : '現金部位';
+                                            const label = key === 'v662' ? '00662' : key === 'v670L' ? '00670L (Nasdaq正2)' : '現金部位';
                                             return (
                                                 <div key={key} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm">
                                                     <div>
@@ -229,7 +230,7 @@
                             <div className="text-center py-24 bg-white/50 rounded-[3rem] border-2 border-dashed border-slate-200">
                                 <div className="text-6xl mb-6">⚖️</div>
                                 <p className="font-black text-slate-400">請填入資產市值開始計算</p>
-                                <p className="text-[10px] font-bold text-slate-300 mt-2 uppercase">Ready for rebalancing</p>
+                                <p className="text-[10px] font-bold text-slate-300 mt-2 uppercase">433 Strategy Ready</p>
                             </div>
                         )}
                     </main>
@@ -238,8 +239,8 @@
                         <div className="h-px bg-slate-200 w-1/3 mx-auto mb-6"></div>
                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em] mb-3">40/30/30 Strategy</p>
                         <p className="text-[10px] text-slate-400 leading-relaxed font-bold">
-                            穩定累積 00662，利用 00670L 增益。<br/>
-                            建議至少每季檢視一次。
+                            核心：00662 (40%) | 攻擊：00670L (30%) | 防禦：現金 (30%)<br/>
+                            建議至少每季檢視一次比例。
                         </p>
                     </footer>
                 </div>
