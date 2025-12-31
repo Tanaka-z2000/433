@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>433 再平衡助手</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* 針對手機輸入框優化 */
+        input[type="number"] {
+            font-size: 16px !important; /* 防止 iOS 自動縮放 */
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        const App = () => {
+            const [values, setValues] = useState({
+                v662: '',
+                v670L: '',
+                cash: ''
+            });
+
+            // 定義 40/30/30 目標
+            const TARGETS = {
+                t662: 0.40,
+                t670L: 0.30,
+                cash: 0.30
+            };
+
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setValues(prev => ({ ...prev, [name]: value }));
+            };
+
+            const report = useMemo(() => {
+                const v662 = parseFloat(values.v662) || 0;
+                const v670L = parseFloat(values.v670L) || 0;
+                const cash = parseFloat(values.cash) || 0;
+                
+                const totalWealth = v662 + v670L + cash;
+                if (totalWealth <= 0) return null;
+
+                const currentRatios = {
+                    '00662': { ratio: v662 / totalWealth, amount: v662 },
+                    '00670L': { ratio: v670L / totalWealth, amount: v670L },
+                    'cash': { ratio: cash / totalWealth, amount: cash }
+                };
+
+                // 核心邏輯：00662 只增不減 (或維持目標)，其餘部分按比例再平衡
+                const targetV662Base = totalWealth * TARGETS.t662;
+                const finalV662 = Math.max(v662, targetV662Base); 
+                
+                const remainingWealth = totalWealth - finalV662;
+                const liquidWeightTotal = TARGETS.t670L + TARGETS.cash; 
+                
+                const final670L = remainingWealth * (TARGETS.t670L / liquidWeightTotal);
+                const finalCash = remainingWealth * (TARGETS.cash / liquidWeightTotal);
+
+                const post = {
+                    v662: { ratio: finalV662 / totalWealth, amount: finalV662, diff: finalV662 - v662 },
+                    v670L: { ratio: final670L / totalWealth, amount: final670L, diff: final670L - v670L },
+                    cash: { ratio: finalCash / totalWealth, amount: finalCash, diff: finalCash - cash }
+                };
+
+                let actions = [];
+                const sellActions = [];
+                const buyActions = [];
+
+                if (post.v670L.diff < -1) sellActions.push(`賣出 00670L：$${Math.abs(Math.round(post.v670L.diff)).toLocaleString()}`);
+                if (post.cash.diff < -1) sellActions.push(`提領現金：$${Math.abs(Math.round(post.cash.diff)).toLocaleString()}`);
+
+                if (post.v662.diff > 1) buyActions.push(`買入 00662：$${Math.round(post.v662.diff).toLocaleString()}`);
+                if (post.v670L.diff > 1) buyActions.push(`買入 00670L：$${Math.round(post.v670L.diff).toLocaleString()}`);
+                if (post.cash.diff > 1) buyActions.push(`留存現金：$${Math.round(post.cash.diff).toLocaleString()}`);
+
+                actions = [...sellActions, ...buyActions];
+                return { totalWealth, currentRatios, actions, post };
+            }, [values]);
+
+            return (
+                <div className="min-h-screen pb-12">
+                    {/* Header */}
+                    <header className="bg-white border-b sticky top-0 z-20 px-4 py-3 flex items-center justify-between shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-indigo-600 text-white px-3 py-1 rounded-lg flex items-center justify-center font-black text-xs shadow-sm leading-none text-center">
+                                433
+                            </div>
+                            <h1 className="text-lg font-bold text-slate-800 tracking-tight">再平衡助手</h1>
+                        </div>
+                        {report && (
+                            <div className="text-right">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Total Assets</p>
+                                <p className="text-sm font-black text-indigo-600">${Math.round(report.totalWealth).toLocaleString()}</p>
+                            </div>
+                        )}
+                    </header>
+
+                    <main className="px-4 py-6 space-y-8 max-w-md mx-auto">
+                        {/* Input Section */}
+                        <section className="space-y-4">
+                            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">資產現況輸入</h2>
+                            <div className="grid grid-cols-1 gap-3">
+                                {[
+                                    { id: 'v662', label: '00662 (Nasdaq) 市值', icon: '📈' },
+                                    { id: 'v670L', label: '00670L (Nasdaq正2) 市值', icon: '⚡' },
+                                    { id: 'cash', label: '現金部位', icon: '💰' }
+                                ].map(item => (
+                                    <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm focus-within:border-indigo-400 transition-colors">
+                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">{item.icon} {item.label}</label>
+                                        <input 
+                                            type="number" 
+                                            name={item.id} 
+                                            value={values[item.id]} 
+                                            onChange={handleInputChange} 
+                                            placeholder="請輸入目前市值" 
+                                            className="w-full bg-transparent border-none outline-none font-black text-xl text-slate-800 placeholder:text-slate-200"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        {report ? (
+                            <div className="space-y-8 animate-fade-in">
+                                {/* Current Ratios */}
+                                <section>
+                                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1 mb-3">目前配置比例</h2>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {Object.entries(report.currentRatios).map(([name, data]) => {
+                                            const target = name === '00662' ? 0.4 : 0.3;
+                                            const diff = (data.ratio - target) * 100;
+                                            const displayName = name === 'cash' ? '現金部位' : name;
+                                            return (
+                                                <div key={name} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                                    <div>
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{displayName}</span>
+                                                        <div className="text-3xl font-black text-slate-800">{(data.ratio * 100).toFixed(1)}%</div>
+                                                    </div>
+                                                    <div className={`text-xs font-bold px-3 py-1.5 rounded-xl ${Math.abs(diff) < 2 ? 'bg-green-50 text-green-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                        {Math.abs(diff) < 2 ? '符合目標' : `${diff > 0 ? '超標' : '偏低'} ${Math.abs(diff).toFixed(1)}%`}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+
+                                {/* Action Steps */}
+                                <section>
+                                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1 mb-3">再平衡操作清單</h2>
+                                    <div className="bg-slate-900 rounded-[2rem] p-6 shadow-xl border-t-8 border-indigo-500">
+                                        {report.actions.length > 0 ? (
+                                            <div className="space-y-5">
+                                                {report.actions.map((act, i) => (
+                                                    <div key={i} className="flex gap-4 items-start border-b border-slate-800 pb-4 last:border-0 last:pb-0">
+                                                        <div className="bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black mt-0.5 shrink-0">
+                                                            {i+1}
+                                                        </div>
+                                                        <span className="text-slate-100 text-base font-bold leading-relaxed">{act}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-slate-500 text-center text-sm py-4 italic font-bold">目前比例精確，維持現狀即可</p>
+                                        )}
+                                    </div>
+                                </section>
+
+                                {/* Target Amounts */}
+                                <section>
+                                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1 mb-3">預計再平衡後目標市值</h2>
+                                    <div className="space-y-3">
+                                        {Object.entries(report.post).map(([key, data]) => {
+                                            const label = key === 'v662' ? '00662' : key === 'v670L' ? '00670L' : '現金部位';
+                                            return (
+                                                <div key={key} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                                    <div>
+                                                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{label}</div>
+                                                        <div className="font-mono text-xl font-black text-slate-800 tracking-tighter">
+                                                            ${Math.round(data.amount).toLocaleString()}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-[9px] font-bold text-indigo-600 px-2 py-0.5 bg-indigo-50 rounded inline-block">目標 {(data.ratio * 100).toFixed(0)}%</div>
+                                                        <div className={`text-[11px] font-black mt-1.5 ${data.diff >= 0 ? 'text-green-600' : 'text-rose-500'}`}>
+                                                            {data.diff >= 0 ? `加碼 $${Math.abs(Math.round(data.diff)).toLocaleString()}` : `減倉 $${Math.abs(Math.round(data.diff)).toLocaleString()}`}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+                            </div>
+                        ) : (
+                            <div className="text-center py-24 bg-white/50 rounded-[3rem] border-2 border-dashed border-slate-200">
+                                <div className="text-6xl mb-6">⚖️</div>
+                                <p className="font-black text-slate-400">請填入資產市值開始計算</p>
+                                <p className="text-[10px] font-bold text-slate-300 mt-2 uppercase">Ready for rebalancing</p>
+                            </div>
+                        )}
+                    </main>
+
+                    <footer className="mt-8 text-center px-6">
+                        <div className="h-px bg-slate-200 w-1/3 mx-auto mb-6"></div>
+                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em] mb-3">40/30/30 Strategy</p>
+                        <p className="text-[10px] text-slate-400 leading-relaxed font-bold">
+                            穩定累積 00662，利用 00670L 增益。<br/>
+                            建議至少每季檢視一次。
+                        </p>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
