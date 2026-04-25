@@ -2,247 +2,418 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>433 再平衡助手</title>
-    <!-- Tailwind CSS CDN -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>封閉式再平衡小工具</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & Babel CDNs -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        /* Optimize number input for mobile */
-        input[type="number"] {
-            font-size: 16px !important;
-        }
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-            animation: fadeIn 0.4s ease-out forwards;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-900 text-slate-200 min-h-screen">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useMemo } = React;
 
         const App = () => {
-            const [values, setValues] = useState({
-                v662: '',
-                v670L: '',
-                cash: ''
+            const [categoryRatios, setCategoryRatios] = useState({
+                core: 40,
+                leverage: 30,
+                defense: 30,
+                custom: 0
             });
 
-            // 定義 40/30/30 目標
-            const TARGETS = {
-                t662: 0.40,
-                t670L: 0.30,
-                cash: 0.30
+            const [categoryLocks, setCategoryLocks] = useState({
+                core: true,
+                leverage: false,
+                defense: false,
+                custom: false
+            });
+
+            const [assets, setAssets] = useState([
+                { id: 1, category: 'core', ticker: '00662', currentValue: 0 },
+                { id: 2, category: 'core', ticker: '009820', currentValue: 0 },
+                { id: 3, category: 'leverage', ticker: '00631L', currentValue: 0 },
+                { id: 4, category: 'leverage', ticker: '00675L', currentValue: 0 },
+                { id: 5, category: 'defense', ticker: '現金', currentValue: 0 },
+                { id: 6, category: 'defense', ticker: '交割款', currentValue: 0 }
+            ]);
+
+            const handleCategoryRatioChange = (cat, value) => {
+                const val = parseFloat(value) || 0;
+                setCategoryRatios(prev => ({ ...prev, [cat]: val }));
             };
 
-            const handleInputChange = (e) => {
-                const { name, value } = e.target;
-                setValues(prev => ({ ...prev, [name]: value }));
+            const handleAssetChange = (id, field, value) => {
+                const val = field === 'currentValue' ? (parseFloat(value) || 0) : value;
+                setAssets(prev => prev.map(asset => 
+                    asset.id === id ? { ...asset, [field]: val } : asset
+                ));
             };
 
-            const report = useMemo(() => {
-                const v662 = parseFloat(values.v662) || 0;
-                const v670L = parseFloat(values.v670L) || 0;
-                const cash = parseFloat(values.cash) || 0;
-                
-                const totalWealth = v662 + v670L + cash;
-                if (totalWealth <= 0) return null;
+            const toggleCategoryLock = (cat) => {
+                setCategoryLocks(prev => ({ ...prev, [cat]: !prev[cat] }));
+            };
 
-                const currentRatios = {
-                    '00662': { ratio: v662 / totalWealth, amount: v662 },
-                    '00670L (Nasdaq正2)': { ratio: v670L / totalWealth, amount: v670L },
-                    '現金部位': { ratio: cash / totalWealth, amount: cash }
+            const addAsset = (category) => {
+                const newId = assets.length > 0 ? Math.max(...assets.map(a => a.id)) + 1 : 1;
+                setAssets(prev => [...prev, {
+                    id: newId, category, ticker: '自訂標的', currentValue: 0
+                }]);
+            };
+
+            const removeAsset = (id) => {
+                setAssets(prev => prev.filter(asset => asset.id !== id));
+            };
+
+            // 核心演算法：超額受限部位溢出權重動態重分配迴圈
+            const calculations = useMemo(() => {
+                let totalValue = 0;
+                const categoryTotals = { core: 0, leverage: 0, defense: 0, custom: 0 };
+                
+                assets.forEach(asset => {
+                    totalValue += asset.currentValue;
+                    categoryTotals[asset.category] += asset.currentValue;
+                });
+
+                const assetResults = {};
+                assets.forEach(asset => {
+                    const catTotal = categoryTotals[asset.category];
+                    let assetRatioInCategory = 0;
+                    if (catTotal > 0) {
+                        assetRatioInCategory = asset.currentValue / catTotal;
+                    } else {
+                        const assetsInCategory = assets.filter(a => a.category === asset.category).length;
+                        assetRatioInCategory = assetsInCategory > 0 ? 1 / assetsInCategory : 0;
+                    }
+                    assetResults[asset.id] = { calculatedRatio: assetRatioInCategory * 100 };
+                });
+
+                const categories = ['core', 'leverage', 'defense', 'custom'];
+                
+                // 動態重分配迴圈
+                let activeCategories = [...categories];
+                const finalTargetValues = {};
+                const overFundedLockedCategories = new Set();
+                
+                let currentPoolValue = totalValue;
+                let currentActiveRatioSum = 0;
+                categories.forEach(cat => currentActiveRatioSum += categoryRatios[cat]);
+                
+                let solved = false;
+                let iterationLimit = 10;
+
+                while (!solved && activeCategories.length > 0 && iterationLimit > 0) {
+                    iterationLimit--;
+                    let newlyLockedCategories = [];
+
+                    // 試算當前活躍部位的理論目標
+                    activeCategories.forEach(cat => {
+                        let ratio = categoryRatios[cat];
+                        let theoreticalTarget = currentActiveRatioSum > 0 ? currentPoolValue * (ratio / currentActiveRatioSum) : 0;
+                        
+                        // 判斷是否為超額鎖定部位：部位鎖定，且理論目標小於現值 (代表系統想賣出但受限)
+                        if (categoryLocks[cat] && theoreticalTarget < categoryTotals[cat]) {
+                            newlyLockedCategories.push(cat);
+                        }
+                    });
+
+                    if (newlyLockedCategories.length > 0) {
+                        // 將新發現的超額鎖定部位從活躍池中抽離，目標強制設為現值
+                        newlyLockedCategories.forEach(cat => {
+                            finalTargetValues[cat] = categoryTotals[cat];
+                            overFundedLockedCategories.add(cat);
+                            currentPoolValue -= categoryTotals[cat];
+                            currentActiveRatioSum -= categoryRatios[cat];
+                            activeCategories = activeCategories.filter(c => c !== cat);
+                        });
+                    } else {
+                        // 活躍池中沒有被迫賣出的鎖定部位了，將剩餘資金按比例分配
+                        activeCategories.forEach(cat => {
+                            let ratio = categoryRatios[cat];
+                            finalTargetValues[cat] = currentActiveRatioSum > 0 ? currentPoolValue * (ratio / currentActiveRatioSum) : 0;
+                        });
+                        solved = true;
+                    }
+                }
+
+                // 處理極端情況：如果活躍比例總和為0，但池子還有錢
+                if (currentActiveRatioSum === 0 && activeCategories.length > 0) {
+                    const splitValue = currentPoolValue / activeCategories.length;
+                    activeCategories.forEach(cat => finalTargetValues[cat] = splitValue);
+                } else if (activeCategories.length === 0 && currentPoolValue > 0) {
+                    // 全部鎖定且都是虧損的極端情況 (邏輯上極罕見，保留此處防呆)
+                    categories.forEach(cat => {
+                        if (!overFundedLockedCategories.has(cat)) {
+                            finalTargetValues[cat] = categoryTotals[cat] + (currentPoolValue / (categories.length - overFundedLockedCategories.size));
+                        }
+                    });
+                }
+
+                // 產出最終分配建議與狀態
+                const categoryCalculations = {};
+                
+                categories.forEach(cat => {
+                    const currentValue = categoryTotals[cat];
+                    const targetValue = finalTargetValues[cat];
+                    const diffValue = targetValue - currentValue;
+                    
+                    const pureTargetRatio = categoryRatios[cat];
+                    const pureTargetValue = totalValue * (pureTargetRatio / 100);
+
+                    let action = '維持';
+                    
+                    if (diffValue > 1) {
+                        action = '買進';
+                    } else if (diffValue < -1) {
+                        action = '賣出';
+                    } else if (overFundedLockedCategories.has(cat)) {
+                        action = '鎖定維持(超額不賣)';
+                    }
+
+                    const amount = Math.abs(diffValue);
+                    const dynamicTargetRatioGlobal = totalValue > 0 ? (targetValue / totalValue) * 100 : 0;
+                    // 由於買賣差額自然守恆，調整後價值必定等於目標價值
+                    const adjustedValue = targetValue;
+                    const adjustedRatioGlobal = dynamicTargetRatioGlobal;
+
+                    categoryCalculations[cat] = {
+                        currentValue,
+                        targetValue,
+                        pureTargetRatio,
+                        pureTargetValue,
+                        action,
+                        amount,
+                        targetRatioGlobal: dynamicTargetRatioGlobal,
+                        adjustedRatioGlobal,
+                        adjustedValue,
+                        isOverFundedLocked: overFundedLockedCategories.has(cat)
+                    };
+                });
+
+                return {
+                    totalValue,
+                    categoryRatiosSum: categoryRatios.core + categoryRatios.leverage + categoryRatios.defense + categoryRatios.custom,
+                    assetResults,
+                    categoryCalculations
                 };
+            }, [assets, categoryRatios, categoryLocks]);
 
-                // 核心邏輯：00662 只增不減 (或維持目標)，其餘部分按比例再平衡
-                const targetV662Base = totalWealth * TARGETS.t662;
-                const finalV662 = Math.max(v662, targetV662Base); 
-                
-                const remainingWealth = totalWealth - finalV662;
-                const liquidWeightTotal = TARGETS.t670L + TARGETS.cash; 
-                
-                const final670L = remainingWealth * (TARGETS.t670L / liquidWeightTotal);
-                const finalCash = remainingWealth * (TARGETS.cash / liquidWeightTotal);
+            const getCategoryLabel = (cat) => {
+                if (cat === 'core') return '核心部位';
+                if (cat === 'leverage') return '槓桿部位';
+                if (cat === 'defense') return '防禦部位';
+                return '其他部位';
+            };
 
-                const post = {
-                    v662: { ratio: finalV662 / totalWealth, amount: finalV662, diff: finalV662 - v662 },
-                    v670L: { ratio: final670L / totalWealth, amount: final670L, diff: final670L - v670L },
-                    cash: { ratio: finalCash / totalWealth, amount: finalCash, diff: finalCash - cash }
-                };
-
-                let actions = [];
-                const sellActions = [];
-                const buyActions = [];
-
-                if (post.v670L.diff < -1) sellActions.push(`賣出 00670L：$${Math.abs(Math.round(post.v670L.diff)).toLocaleString()}`);
-                if (post.cash.diff < -1) sellActions.push(`提領現金：$${Math.abs(Math.round(post.cash.diff)).toLocaleString()}`);
-
-                if (post.v662.diff > 1) buyActions.push(`買入 00662：$${Math.round(post.v662.diff).toLocaleString()}`);
-                if (post.v670L.diff > 1) buyActions.push(`買入 00670L：$${Math.round(post.v670L.diff).toLocaleString()}`);
-                if (post.cash.diff > 1) buyActions.push(`留存現金：$${Math.round(post.cash.diff).toLocaleString()}`);
-
-                actions = [...sellActions, ...buyActions];
-                return { totalWealth, currentRatios, actions, post };
-            }, [values]);
+            const getCategoryColor = (cat) => {
+                if (cat === 'core') return 'bg-blue-900/40 border-blue-700/50 text-blue-300';
+                if (cat === 'leverage') return 'bg-purple-900/40 border-purple-700/50 text-purple-300';
+                if (cat === 'defense') return 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300';
+                return 'bg-amber-900/40 border-amber-700/50 text-amber-300';
+            };
 
             return (
-                <div className="min-h-screen pb-12">
-                    {/* Header */}
-                    <header className="bg-white border-b sticky top-0 z-20 px-4 py-3 flex items-center justify-between shadow-sm">
-                        <div className="flex items-center gap-2">
-                            <div className="bg-indigo-600 text-white px-3 py-1 rounded-lg flex items-center justify-center font-black text-xs shadow-sm leading-none text-center">
-                                433
-                            </div>
-                            <h1 className="text-lg font-bold text-slate-800 tracking-tight">再平衡助手</h1>
-                        </div>
-                        {report && (
-                            <div className="text-right">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Total Assets</p>
-                                <p className="text-sm font-black text-indigo-600">${Math.round(report.totalWealth).toLocaleString()}</p>
-                            </div>
-                        )}
+                <div className="max-w-6xl mx-auto p-4 md:p-8">
+                    <header className="mb-8">
+                        <h1 className="text-3xl font-black text-slate-100 tracking-tight">封閉式再平衡小工具</h1>
+                        <p className="text-slate-400 font-medium mt-2">四三三資產配置 ｜ 溢出權重動態重分配演算法</p>
                     </header>
 
-                    <main className="px-4 py-6 space-y-8 max-w-md mx-auto">
-                        {/* Input Section */}
-                        <section className="space-y-4">
-                            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">資產現況輸入</h2>
-                            <div className="grid grid-cols-1 gap-3">
-                                {[
-                                    { id: 'v662', label: '00662 (Nasdaq) 市值', icon: '📈' },
-                                    { id: 'v670L', label: '00670L (Nasdaq正2) 市值', icon: '⚡' },
-                                    { id: 'cash', label: '現金部位', icon: '💰' }
-                                ].map(item => (
-                                    <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm focus-within:border-indigo-400 transition-colors">
-                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">{item.icon} {item.label}</label>
-                                        <input 
-                                            type="number" 
-                                            name={item.id} 
-                                            value={values[item.id]} 
-                                            onChange={handleInputChange} 
-                                            placeholder="請輸入目前市值" 
-                                            className="w-full bg-transparent border-none outline-none font-black text-xl text-slate-800 placeholder:text-slate-200"
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                            {report && (
-                                <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 flex justify-between items-center shadow-sm">
-                                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">目前總市值 (Total Sum)</span>
-                                    <div className="text-xl font-black text-indigo-700">${Math.round(report.totalWealth).toLocaleString()}</div>
+                    <section className="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 p-6 mb-8">
+                        <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+                            <h2 className="text-xl font-bold text-slate-100">全域配置佔比設定</h2>
+                            <span className={`px-4 py-1.5 rounded-full text-sm font-bold ${calculations.categoryRatiosSum === 100 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>
+                                總和：{calculations.categoryRatiosSum}%
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            {['core', 'leverage', 'defense', 'custom'].map(cat => (
+                                <div key={cat} className={`p-4 rounded-xl border ${getCategoryColor(cat)}`}>
+                                    <label className="block text-sm font-bold mb-3">{getCategoryLabel(cat)} (%)</label>
+                                    <input 
+                                        type="number" 
+                                        value={categoryRatios[cat]}
+                                        onChange={(e) => handleCategoryRatioChange(cat, e.target.value)}
+                                        className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono text-lg text-slate-200"
+                                    />
                                 </div>
-                            )}
-                        </section>
+                            ))}
+                        </div>
+                    </section>
 
-                        {report ? (
-                            <div className="space-y-8 animate-fade-in">
-                                {/* Current Ratios */}
-                                <section>
-                                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1 mb-3">目前配置比例</h2>
-                                    <div className="grid grid-cols-1 gap-3">
-                                        {Object.entries(report.currentRatios).map(([name, data]) => {
-                                            const targetMap = { '00662': 0.40, '00670L (Nasdaq正2)': 0.30, '現金部位': 0.30 };
-                                            const target = targetMap[name];
-                                            const diff = (data.ratio - target) * 100;
-                                            return (
-                                                <div key={name} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm">
-                                                    <div>
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{name}</span>
-                                                        <div className="flex items-baseline gap-2">
-                                                            <div className="text-3xl font-black text-slate-800">{(data.ratio * 100).toFixed(1)}%</div>
-                                                            <div className="text-sm font-bold text-slate-400 tracking-tighter">${Math.round(data.amount).toLocaleString()}</div>
-                                                        </div>
-                                                    </div>
-                                                    <div className={`text-xs font-bold px-3 py-1.5 rounded-xl ${Math.abs(diff) < 2 ? 'bg-green-50 text-green-600' : 'bg-rose-50 text-rose-600'}`}>
-                                                        {Math.abs(diff) < 2 ? '符合目標' : `${diff > 0 ? '超標' : '偏低'} ${Math.abs(diff).toFixed(1)}%`}
-                                                    </div>
+                    <section className="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 p-6 mb-8">
+                        <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+                            <h2 className="text-xl font-bold text-slate-100">持倉現況</h2>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-600 text-sm font-bold text-slate-400">
+                                        <th className="pb-3 pr-4 w-32">分類與鎖定狀態</th>
+                                        <th className="pb-3 pr-4 w-48">代號或名稱</th>
+                                        <th className="pb-3 pr-4">目前市值 (TWD)</th>
+                                        <th className="pb-3 pr-4 w-32">系統試算類別佔比</th>
+                                        <th className="pb-3 text-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {['core', 'leverage', 'defense', 'custom'].map(category => {
+                                        const categoryAssets = assets.filter(a => a.category === category);
+                                        if (categoryAssets.length === 0 && category !== 'custom') return null;
+                                        
+                                        return (
+                                        <React.Fragment key={category}>
+                                            {categoryAssets.map((asset, idx) => {
+                                                const res = calculations.assetResults[asset.id];
+                                                return (
+                                                    <tr key={asset.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                                                        <td className="py-4 pr-4 align-top pt-5">
+                                                            {idx === 0 && (
+                                                                <div className="flex flex-col items-start gap-2">
+                                                                    <span className={`px-2 py-1 rounded text-xs font-bold border ${getCategoryColor(category)}`}>
+                                                                        {getCategoryLabel(category)}
+                                                                    </span>
+                                                                    <button 
+                                                                        onClick={() => toggleCategoryLock(category)}
+                                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold border transition-all duration-300 ${categoryLocks[category] ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700 hover:text-slate-300'}`}
+                                                                        title={categoryLocks[category] ? "解除部位鎖定" : "點擊鎖定此部位不賣出"}
+                                                                    >
+                                                                        {categoryLocks[category] ? (
+                                                                            <React.Fragment>
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                                                                已限制賣出
+                                                                            </React.Fragment>
+                                                                        ) : (
+                                                                            <React.Fragment>
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+                                                                                開放再平衡
+                                                                            </React.Fragment>
+                                                                        )}
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-4 pr-4 align-top pt-5">
+                                                            <input type="text" value={asset.ticker} onChange={(e) => handleAssetChange(asset.id, 'ticker', e.target.value)} className="w-full font-mono font-bold bg-transparent border-b border-dashed border-slate-600 focus:outline-none focus:border-indigo-400 text-slate-200" />
+                                                        </td>
+                                                        <td className="py-4 pr-4 align-top pt-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-slate-500 font-bold mt-1">$</span>
+                                                                <input type="number" value={asset.currentValue || ''} placeholder="0" onChange={(e) => handleAssetChange(asset.id, 'currentValue', e.target.value)} className="w-full px-3 py-1.5 bg-slate-900 border border-slate-600 rounded font-mono focus:outline-none focus:border-indigo-500 text-lg text-slate-100" />
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 pr-4 align-top pt-5">
+                                                            <span className="text-slate-300 font-mono font-bold bg-slate-900 px-3 py-1.5 rounded border border-slate-700">
+                                                                {res.calculatedRatio.toFixed(1)}%
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-4 text-center align-top pt-5">
+                                                            <button onClick={() => removeAsset(asset.id)} className="text-slate-500 hover:text-rose-500 font-bold text-xl px-2 transition-colors">×</button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            <tr className="bg-slate-800/50">
+                                                <td colSpan="5" className="py-3 pl-4 border-b border-slate-700">
+                                                    <button onClick={() => addAsset(category)} className="text-sm font-bold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-2">
+                                                        <span className="bg-indigo-500/20 rounded-full w-5 h-5 flex items-center justify-center">+</span> 
+                                                        新增 {getCategoryLabel(category)} 標的
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </React.Fragment>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section className="bg-slate-950 rounded-2xl shadow-2xl border border-slate-800 p-6 text-white relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                        
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 border-b border-slate-800 pb-4 relative z-10">
+                            <div>
+                                <h2 className="text-2xl font-black text-slate-100 mb-2">大部位資金調整建議</h2>
+                                <div className="flex items-center gap-4 text-slate-400 text-sm">
+                                    <p>總資產市值</p>
+                                </div>
+                            </div>
+                            <div className="text-3xl font-mono font-black text-emerald-400 mt-2 md:mt-0">
+                                ${calculations.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 relative z-10">
+                            {['core', 'leverage', 'defense', 'custom'].map(cat => {
+                                const res = calculations.categoryCalculations[cat];
+                                
+                                if (categoryRatios[cat] === 0 && res.currentValue === 0) return null;
+
+                                const isBuy = res.action === '買進';
+                                const isSell = res.action === '賣出';
+                                const isLockedHold = res.action === '鎖定維持(超額不賣)';
+                                
+                                return (
+                                    <div key={cat} className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 hover:border-slate-700 transition-colors">
+                                        
+                                        <div className="flex-1 w-full">
+                                            <div className="flex flex-wrap items-center gap-3 mb-3">
+                                                <span className="text-xl font-black text-white">{getCategoryLabel(cat)}</span>
+                                                <div className="flex items-center gap-2 text-xs font-mono bg-slate-950 px-2 py-1 rounded border border-slate-800">
+                                                    <span className="text-slate-400">原值: ${res.currentValue.toLocaleString()}</span>
+                                                    <span className="text-slate-600">→</span>
+                                                    <span className="text-emerald-400 font-bold">調後: ${res.adjustedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                </section>
-
-                                {/* Action Steps */}
-                                <section>
-                                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1 mb-3">再平衡操作清單</h2>
-                                    <div className="bg-slate-900 rounded-[2rem] p-6 shadow-xl border-t-8 border-indigo-500">
-                                        {report.actions.length > 0 ? (
-                                            <div className="space-y-5">
-                                                {report.actions.map((act, i) => (
-                                                    <div key={i} className="flex gap-4 items-start border-b border-slate-800 pb-4 last:border-0 last:pb-0">
-                                                        <div className="bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black mt-0.5 shrink-0">
-                                                            {i+1}
-                                                        </div>
-                                                        <span className="text-slate-100 text-base font-bold leading-relaxed">{act}</span>
-                                                    </div>
-                                                ))}
+                                                {isLockedHold && (
+                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                                        超額受限隔離
+                                                    </span>
+                                                )}
                                             </div>
-                                        ) : (
-                                            <p className="text-slate-500 text-center text-sm py-4 italic font-bold">目前比例精確，維持現狀即可</p>
-                                        )}
-                                    </div>
-                                </section>
-
-                                {/* Target Amounts */}
-                                <section>
-                                    <div className="flex justify-between items-end mb-3 px-1">
-                                        <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">預計再平衡後目標市值</h2>
-                                        <div className="text-[10px] font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded">
-                                            目標總額: ${Math.round(report.totalWealth).toLocaleString()}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-3">
-                                        {Object.entries(report.post).map(([key, data]) => {
-                                            const label = key === 'v662' ? '00662' : key === 'v670L' ? '00670L (Nasdaq正2)' : '現金部位';
-                                            return (
-                                                <div key={key} className="bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm">
-                                                    <div>
-                                                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{label}</div>
-                                                        <div className="font-mono text-xl font-black text-slate-800 tracking-tighter">
-                                                            ${Math.round(data.amount).toLocaleString()}
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="text-[9px] font-bold text-indigo-600 px-2 py-0.5 bg-indigo-50 rounded inline-block">目標佔比 {(data.ratio * 100).toFixed(0)}%</div>
-                                                        <div className={`text-[11px] font-black mt-1.5 ${data.diff >= 0 ? 'text-green-600' : 'text-rose-500'}`}>
-                                                            {data.diff >= 0 ? `加碼 $${Math.abs(Math.round(data.diff)).toLocaleString()}` : `減倉 $${Math.abs(Math.round(data.diff)).toLocaleString()}`}
-                                                        </div>
-                                                    </div>
+                                            
+                                            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                                                <div className="bg-slate-950 p-2 rounded border border-slate-800">
+                                                    <span className="text-slate-500 block mb-1">純數學目標佔比</span>
+                                                    <span className="text-slate-300 text-sm">{res.pureTargetRatio.toFixed(1)}%</span>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                </section>
-                            </div>
-                        ) : (
-                            <div className="text-center py-24 bg-white/50 rounded-[3rem] border-2 border-dashed border-slate-200">
-                                <div className="text-6xl mb-6">⚖️</div>
-                                <p className="font-black text-slate-400">請填入資產市值開始計算</p>
-                                <p className="text-[10px] font-bold text-slate-300 mt-2 uppercase">433 Strategy Ready</p>
-                            </div>
-                        )}
-                    </main>
+                                                <div className="bg-slate-950 p-2 rounded border border-slate-800">
+                                                    <span className="text-slate-500 block mb-1">調整後佔比</span>
+                                                    <span className={`text-sm ${isLockedHold ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                        {res.adjustedRatioGlobal.toFixed(1)}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
 
-                    <footer className="mt-8 text-center px-6">
-                        <div className="h-px bg-slate-200 w-1/3 mx-auto mb-6"></div>
-                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em] mb-3">40/30/30 Strategy</p>
-                        <p className="text-[10px] text-slate-400 leading-relaxed font-bold">
-                            核心：00662 (40%) | 攻擊：00670L (30%) | 防禦：現金 (30%)<br/>
-                            建議至少每季檢視一次比例。
-                        </p>
-                    </footer>
+                                        <div className="text-left lg:text-right flex-1 w-full lg:w-auto border-t lg:border-t-0 border-slate-800 pt-4 lg:pt-0">
+                                            <p className="text-[11px] text-slate-500 font-bold mb-1 uppercase tracking-wider">建議動作與金額</p>
+                                            <div className="flex items-center justify-start lg:justify-end gap-3 mb-2">
+                                                <span className={`text-xl font-black px-3 py-1 rounded-lg ${isBuy ? 'bg-rose-500/10 text-rose-400' : isSell ? 'bg-emerald-500/10 text-emerald-400' : isLockedHold ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>
+                                                    {res.action}
+                                                </span>
+                                                <span className={`text-2xl font-mono font-black ${isBuy ? 'text-rose-400' : isSell ? 'text-emerald-400' : isLockedHold ? 'text-amber-400' : 'text-slate-400'}`}>
+                                                    ${Math.abs(res.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                </span>
+                                            </div>
+                                            <div className="text-[10px] font-mono text-slate-500 flex justify-start lg:justify-end">
+                                                <span>純數學理論目標：${res.pureTargetValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
                 </div>
             );
         };
