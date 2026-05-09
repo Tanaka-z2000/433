@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>封閉式再平衡小工具</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,6 +12,23 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         input[type="number"]::-webkit-inner-spin-button, 
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        @media (max-width: 768px) {
+            input[type="number"],
+            input[type="text"] {
+                padding-top: 14px !important;
+                padding-bottom: 14px !important;
+                min-height: 52px !important;
+                font-size: 1.125rem !important;
+                line-height: 1.25 !important;
+            }
+            .bg-slate-900 {
+                min-height: 100dvh;
+            }
+        }
+        input:focus {
+            scroll-margin-top: 20px;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-200 min-h-screen">
@@ -96,7 +113,6 @@
 
                 const categories = ['core', 'leverage', 'defense', 'custom'];
                 
-                // 動態重分配迴圈
                 let activeCategories = [...categories];
                 const finalTargetValues = {};
                 const overFundedLockedCategories = new Set();
@@ -112,19 +128,16 @@
                     iterationLimit--;
                     let newlyLockedCategories = [];
 
-                    // 試算當前活躍部位的理論目標
                     activeCategories.forEach(cat => {
                         let ratio = categoryRatios[cat];
                         let theoreticalTarget = currentActiveRatioSum > 0 ? currentPoolValue * (ratio / currentActiveRatioSum) : 0;
                         
-                        // 判斷是否為超額鎖定部位：部位鎖定，且理論目標小於現值 (代表系統想賣出但受限)
                         if (categoryLocks[cat] && theoreticalTarget < categoryTotals[cat]) {
                             newlyLockedCategories.push(cat);
                         }
                     });
 
                     if (newlyLockedCategories.length > 0) {
-                        // 將新發現的超額鎖定部位從活躍池中抽離，目標強制設為現值
                         newlyLockedCategories.forEach(cat => {
                             finalTargetValues[cat] = categoryTotals[cat];
                             overFundedLockedCategories.add(cat);
@@ -133,7 +146,6 @@
                             activeCategories = activeCategories.filter(c => c !== cat);
                         });
                     } else {
-                        // 活躍池中沒有被迫賣出的鎖定部位了，將剩餘資金按比例分配
                         activeCategories.forEach(cat => {
                             let ratio = categoryRatios[cat];
                             finalTargetValues[cat] = currentActiveRatioSum > 0 ? currentPoolValue * (ratio / currentActiveRatioSum) : 0;
@@ -142,12 +154,10 @@
                     }
                 }
 
-                // 處理極端情況：如果活躍比例總和為0，但池子還有錢
                 if (currentActiveRatioSum === 0 && activeCategories.length > 0) {
                     const splitValue = currentPoolValue / activeCategories.length;
                     activeCategories.forEach(cat => finalTargetValues[cat] = splitValue);
                 } else if (activeCategories.length === 0 && currentPoolValue > 0) {
-                    // 全部鎖定且都是虧損的極端情況 (邏輯上極罕見，保留此處防呆)
                     categories.forEach(cat => {
                         if (!overFundedLockedCategories.has(cat)) {
                             finalTargetValues[cat] = categoryTotals[cat] + (currentPoolValue / (categories.length - overFundedLockedCategories.size));
@@ -155,12 +165,11 @@
                     });
                 }
 
-                // 產出最終分配建議與狀態
                 const categoryCalculations = {};
                 
                 categories.forEach(cat => {
                     const currentValue = categoryTotals[cat];
-                    const targetValue = finalTargetValues[cat];
+                    const targetValue = finalTargetValues[cat] || 0;
                     const diffValue = targetValue - currentValue;
                     
                     const pureTargetRatio = categoryRatios[cat];
@@ -178,7 +187,6 @@
 
                     const amount = Math.abs(diffValue);
                     const dynamicTargetRatioGlobal = totalValue > 0 ? (targetValue / totalValue) * 100 : 0;
-                    // 由於買賣差額自然守恆，調整後價值必定等於目標價值
                     const adjustedValue = targetValue;
                     const adjustedRatioGlobal = dynamicTargetRatioGlobal;
 
@@ -240,7 +248,8 @@
                                         type="number" 
                                         value={categoryRatios[cat]}
                                         onChange={(e) => handleCategoryRatioChange(cat, e.target.value)}
-                                        className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono text-lg text-slate-200"
+                                        onFocus={(e) => { e.target.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                                        className="w-full px-3 py-3.5 sm:py-2 bg-slate-900 border border-slate-600 rounded-lg shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 font-mono text-lg text-slate-200 min-h-[52px]"
                                     />
                                 </div>
                             ))}
@@ -301,12 +310,16 @@
                                                             )}
                                                         </td>
                                                         <td className="py-4 pr-4 align-top pt-5">
-                                                            <input type="text" value={asset.ticker} onChange={(e) => handleAssetChange(asset.id, 'ticker', e.target.value)} className="w-full font-mono font-bold bg-transparent border-b border-dashed border-slate-600 focus:outline-none focus:border-indigo-400 text-slate-200" />
+                                                            <input type="text" value={asset.ticker} onChange={(e) => handleAssetChange(asset.id, 'ticker', e.target.value)} 
+                                                                   onFocus={(e) => { e.target.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                                                                   className="w-full font-mono font-bold bg-transparent border-b border-dashed border-slate-600 focus:outline-none focus:border-indigo-400 text-slate-200 py-3 min-h-[52px]" />
                                                         </td>
                                                         <td className="py-4 pr-4 align-top pt-4">
                                                             <div className="flex items-center gap-2">
                                                                 <span className="text-slate-500 font-bold mt-1">$</span>
-                                                                <input type="number" value={asset.currentValue || ''} placeholder="0" onChange={(e) => handleAssetChange(asset.id, 'currentValue', e.target.value)} className="w-full px-3 py-1.5 bg-slate-900 border border-slate-600 rounded font-mono focus:outline-none focus:border-indigo-500 text-lg text-slate-100" />
+                                                                <input type="number" value={asset.currentValue || ''} placeholder="0" onChange={(e) => handleAssetChange(asset.id, 'currentValue', e.target.value)} 
+                                                                       onFocus={(e) => { e.target.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                                                                       className="w-full px-3 py-3 sm:py-1.5 bg-slate-900 border border-slate-600 rounded font-mono focus:outline-none focus:border-indigo-500 text-lg text-slate-100 min-h-[52px]" />
                                                             </div>
                                                         </td>
                                                         <td className="py-4 pr-4 align-top pt-5">
