@@ -88,7 +88,6 @@
                 setAssets(prev => prev.filter(asset => asset.id !== id));
             };
 
-            // 核心演算法：超額受限部位溢出權重動態重分配迴圈
             const calculations = useMemo(() => {
                 let totalValue = 0;
                 const categoryTotals = { core: 0, leverage: 0, defense: 0, custom: 0 };
