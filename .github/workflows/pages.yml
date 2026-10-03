@@ -60,3 +60,30 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify public five-section website
+        uses: actions/github-script@v7
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        with:
+          script: |
+            const url = process.env.PAGE_URL;
+            for (let attempt = 0; attempt < 12; attempt++) {
+              try {
+                const page = await fetch(url, { cache: 'no-store' });
+                const html = await page.text();
+                const script = html.match(/src="([^"]+\.js)"/);
+                if (!page.ok || !script) throw new Error('Compiled HTML not visible yet');
+                const bundle = await fetch(new URL(script[1], url));
+                const code = await bundle.text();
+                const headings = ['現金與本次目標', '持倉與交易限制', '調整方案', '情境試算', '歷史快照'];
+                if (!bundle.ok || !headings.every(label => code.includes(label)) || code.includes('市場觀察筆記')) {
+                  throw new Error('Expected five-section application bundle not visible yet');
+                }
+                core.info(`Verified public five-section website: ${url}`);
+                return;
+              } catch (error) {
+                core.info(String(error));
+              }
+              await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+            core.setFailed('Public website did not match the compiled five-section application.');
