@@ -93,6 +93,7 @@ function App() {
   const [initial] = useState(readInitial);
   const [p, setP] = useState(initial.data.portfolio),
     [snapshots, setSnapshots] = useState<Snapshot[]>(initial.data.snapshots),
+    // Retain legacy notes in backups without exposing the removed feature.
     [evidence, setEvidence] = useState<Evidence[]>(initial.data.evidence);
   const [blocked, setBlocked] = useState(initial.blocked),
     [message, setMessage] = useState(initial.message),
@@ -100,13 +101,6 @@ function App() {
   const [pending, setPending] = useState<Backup | null>(null),
     [name, setName] = useState(""),
     [shock, setShock] = useState<Record<string, number>>({});
-  const [eDraft, setEDraft] = useState<Omit<Evidence, "id">>({
-    title: "",
-    value: "",
-    date: "",
-    source: "",
-    status: "待核對",
-  });
   const [applied, setApplied] = useState(false);
   const errors = validate(p),
     result = plan(p, mode),
@@ -844,94 +838,6 @@ function App() {
               })}
             </div>
           )}
-        </section>
-        <section className="panel">
-          <div className="section-heading">
-            <h2>
-              <b>06</b> 市場觀察筆記
-            </h2>
-            <span>手動紀錄，未連接即時行情</span>
-          </div>
-          <p className="hint">
-            保存晨晚報或自行查核的資料，供調整目標時參考。核對狀態由你標記，不會自動產生買賣指令。
-          </p>
-          <div className="field-grid">
-            {(["title", "value", "date", "source"] as const).map((key, i) => (
-              <label key={key}>
-                {["觀察項目", "數值／摘要", "資料日期", "來源網址"][i]}
-                <input
-                  type={
-                    key === "date" ? "date" : key === "source" ? "url" : "text"
-                  }
-                  value={eDraft[key]}
-                  onChange={(e) =>
-                    setEDraft({ ...eDraft, [key]: e.target.value })
-                  }
-                />
-              </label>
-            ))}
-            <label>
-              核對狀態
-              <select
-                value={eDraft.status}
-                onChange={(e) =>
-                  setEDraft({
-                    ...eDraft,
-                    status: e.target.value as Evidence["status"],
-                  })
-                }
-              >
-                <option>待核對</option>
-                <option>已核對</option>
-                <option>落後</option>
-              </select>
-            </label>
-          </div>
-          <button
-            onClick={() => {
-              if (
-                !eDraft.title ||
-                !eDraft.value ||
-                !eDraft.date ||
-                !/^https?:\/\//i.test(eDraft.source)
-              ) {
-                setMessage("市場筆記需填項目、內容、日期及 http(s) 來源網址");
-                return;
-              }
-              setEvidence(
-                [{ ...eDraft, id: crypto.randomUUID() }, ...evidence].slice(
-                  0,
-                  100,
-                ),
-              );
-              setEDraft({ ...eDraft, title: "", value: "" });
-            }}
-          >
-            新增觀察
-          </button>
-          <div className="evidence-list">
-            {evidence.map((e) => (
-              <article key={e.id}>
-                <span className="tag">{e.status}</span>
-                <strong>{e.title}</strong>
-                <p>{e.value}</p>
-                <small>
-                  資料日 {e.date} ·{" "}
-                  <a href={e.source} target="_blank" rel="noreferrer">
-                    查看來源
-                  </a>
-                </small>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    setEvidence(evidence.filter((x) => x.id !== e.id))
-                  }
-                >
-                  刪除
-                </button>
-              </article>
-            ))}
-          </div>
         </section>
         <footer>
           433 · 個人資產再配置工具

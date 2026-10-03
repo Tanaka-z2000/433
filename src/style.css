@@ -476,40 +476,6 @@ td:first-child {
   color: #7c8e8e;
   font-size: 11px;
 }
-.evidence-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 15px;
-  margin-top: 18px;
-}
-.evidence-list article {
-  border: 1px solid #e1e9e7;
-  border-radius: 8px;
-  padding: 15px;
-  overflow-wrap: anywhere;
-}
-.evidence-list strong {
-  font-size: 14px;
-}
-.evidence-list p {
-  font-size: 13px;
-}
-.evidence-list small {
-  font-size: 11px;
-  color: #6a827b;
-}
-.evidence-list button {
-  float: right;
-}
-.tag {
-  display: inline-block;
-  font-size: 10px;
-  padding: 3px 7px;
-  background: #ecf2ef;
-  color: #718879;
-  border-radius: 4px;
-  margin-right: 8px;
-}
 footer {
   text-align: center;
   color: #6b847c;
@@ -646,9 +612,6 @@ footer span {
   input,
   select {
     font-size: 16px;
-  }
-  .evidence-list {
-    grid-template-columns: 1fr;
   }
   .snapshot-list > div {
     flex-wrap: wrap;
