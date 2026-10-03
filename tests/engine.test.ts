@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   blankAsset,
+  standardFees,
+  fee,
   initialPortfolio,
   plan,
   meetsPrinciples,
@@ -199,5 +201,19 @@ describe("execution eligibility", () => {
     expect(
       validate({ ...fixture(), assets: [null] } as unknown as Portfolio),
     ).toContain("標的格式錯誤");
+  });
+});
+
+describe("Taiwan fee presets", () => {
+  it("uses undiscounted commission, zero minimum and product-specific sell tax", () => {
+    const stock = { ...blankAsset(), price: 100 };
+    expect(stock.minFee).toBe(0);
+    expect(stock.sellTaxRate).toBe(0.3);
+    expect(fee(stock, 1000)).toBe(142.5);
+    expect(fee(stock, -1000)).toBe(442.5);
+    const etf = { ...stock, ...standardFees("equityETF") };
+    expect(fee(etf, 1000)).toBe(142.5);
+    expect(fee(etf, -1000)).toBe(242.5);
+    expect(fee(etf, 1)).toBe(0.14);
   });
 });

@@ -281,6 +281,11 @@ export function plan(p: Portfolio, mode: Mode): Plan {
   }
   return result;
 }
+export const standardFees = (product: "stock" | "equityETF") => ({
+  feeRate: 0.1425,
+  minFee: 0,
+  sellTaxRate: product === "stock" ? 0.3 : 0.1,
+});
 export const blankAsset = (): Asset => ({
   id: crypto.randomUUID(),
   ticker: "",
@@ -290,9 +295,7 @@ export const blankAsset = (): Asset => ({
   target: null,
   limit: "free",
   lot: 1,
-  feeRate: 0.1425,
-  minFee: 20,
-  sellTaxRate: 0.1,
+  ...standardFees("stock"),
 });
 export const initialPortfolio = (): Portfolio => ({
   version: 1,

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   blankAsset,
+  standardFees,
   initialPortfolio,
   meetsPrinciples,
   plan,
@@ -178,6 +179,7 @@ function App() {
           {
             ...blankAsset(),
             ticker: "00662",
+            ...standardFees("equityETF"),
             kind: "core",
             shares: 1000,
             price: 100,
@@ -186,6 +188,7 @@ function App() {
           {
             ...blankAsset(),
             ticker: "00675L",
+            ...standardFees("equityETF"),
             kind: "leverage",
             shares: 1000,
             price: 150,
@@ -529,6 +532,20 @@ function App() {
                 </div>
                 <details>
                   <summary>交易單位與費用設定</summary>
+                  <div className="toolbar">
+                    <button
+                      onClick={() => assetUpdate(a.id, standardFees("stock"))}
+                    >
+                      套用台股股票標準費率
+                    </button>
+                    <button
+                      onClick={() =>
+                        assetUpdate(a.id, standardFees("equityETF"))
+                      }
+                    >
+                      套用股票型 ETF 費率
+                    </button>
+                  </div>
                   <div className="field-grid">
                     <NumberField
                       label="交易單位（股）"
@@ -553,7 +570,10 @@ function App() {
                     />
                   </div>
                   <p className="hint">
-                    預設費率為可修改的估計值，請按商品與券商確認。1
+                    未折扣手續費為成交金額的 0.1425%（買賣皆收），最低手續費預設
+                    0 元。 證交稅僅賣出收取：一般股票 0.3%，股票型 ETF（含
+                    00662、台股正二）0.1%。 新增標的預設一般股票，ETF
+                    請套用對應費率；不含當沖優惠及其他商品減免。1
                     股表示零股，1000 股表示整張；每標的視為一筆交易。
                   </p>
                 </details>
