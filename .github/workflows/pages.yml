@@ -26,6 +26,7 @@ jobs:
   deploy:
     needs: build
     permissions:
+      actions: read
       pages: write
       id-token: write
     environment:
@@ -33,6 +34,29 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
+      # This repository also runs GitHub's built-in branch Pages publisher.
+      # Publish the Vite artifact last so source HTML cannot overwrite it.
+      - name: Wait for branch Pages publisher
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let absent = 0;
+            for (let attempt = 0; attempt < 90; attempt++) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+                ...context.repo, head_sha: context.sha, per_page: 100
+              });
+              const legacy = runs.filter(run => run.name === 'pages build and deployment');
+              if (legacy.length && legacy.every(run => run.status === 'completed')) {
+                core.info('Branch Pages publisher finished; publishing compiled artifact next.');
+                return;
+              }
+              if (!legacy.length && ++absent >= 6) {
+                core.info('No branch publisher found; repository may use Actions-only Pages.');
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+            core.setFailed('Branch Pages publisher has not finished; refusing competing deployment.');
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
