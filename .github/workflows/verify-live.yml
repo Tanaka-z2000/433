@@ -63,6 +63,7 @@ jobs:
         run: |
           export CHROMIUM_PATH="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
           python tests/v4_allocation_reset.py
+          python tests/v4_workflow_pressure.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
