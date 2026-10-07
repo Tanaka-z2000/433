@@ -190,6 +190,18 @@ function App() {
   const [digest, setDigest] = useState("");
   const [importSource, setImportSource] = useState("");
   const importSequence = useRef(0);
+  const previewHeading = useRef<HTMLHeadingElement>(null);
+  const previewTrigger = useRef<HTMLElement | null>(null);
+  const feedback = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (!pending) return;
+    previewTrigger.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    previewHeading.current?.focus({ preventScroll: true });
+    previewHeading.current?.scrollIntoView({ block: "start" });
+  }, [pending]);
   const [pendingKind, setPendingKind] = useState<
     "backup" | "csv" | "portfolio"
   >("backup");
@@ -576,6 +588,74 @@ function App() {
           </button>
           <button onClick={demo}>載入示範</button>
         </div>
+        {incoming && (
+          <section
+            className="notice import-preview"
+            aria-labelledby="import-preview-title"
+          >
+            <h3 id="import-preview-title" ref={previewHeading} tabIndex={-1}>
+              匯入預覽／確認載入資料
+            </h3>
+            <p>
+              尚未載入。請檢查下列內容，再按「確認載入」；取消會保留目前資料。
+            </p>
+            <p>{importSource}</p>
+            <p>
+              快照 {incoming.snapshots.length} 份 · 最近匯出{" "}
+              {dateText(incoming.exported?.at)} · 載入後狀態：
+              {incoming.state === "estimate" ? "待成交核對" : "使用者持倉"}
+            </p>
+            <p>
+              {incoming.portfolio.assets.length} 個標的，現金{" "}
+              {fmt(incoming.portfolio.cash)} 元，交割款{" "}
+              {fmt(incoming.portfolio.settlement)} 元。載入會取代 V4
+              {pendingCSV
+                ? "的持倉；現金、交割款與快照以確認當下內容保留。"
+                : pendingKind === "portfolio"
+                  ? "目前持倉與設定；快照清單以確認當下內容保留。"
+                  : "目前輸入與清單。"}
+              其他版本的保存資料保留。建議先匯出目前內容。
+            </p>
+            <button
+              className="primary"
+              onClick={() => {
+                const issues = validate(incoming.portfolio);
+                if (issues.length) {
+                  setMessage(issues.join("；"));
+                  return;
+                }
+                try {
+                  serializeFinancialBackup(incoming, 1024);
+                } catch (error) {
+                  setMessage((error as Error).message);
+                  return;
+                }
+                resetLookup();
+                setP(incoming.portfolio);
+                setSnapshots(incoming.snapshots);
+                setEvidence(incoming.evidence);
+                setPending(null);
+                setRecordState(incoming.state ?? "actual");
+                setBeforeEstimate(incoming.beforeEstimate);
+                setExported(incoming.exported);
+                setShock({});
+                setMessage("已載入資料，請查看保存狀態。");
+                feedback.current?.focus({ preventScroll: true });
+                feedback.current?.scrollIntoView({ block: "center" });
+              }}
+            >
+              確認載入
+            </button>{" "}
+            <button
+              onClick={() => {
+                setPending(null);
+                previewTrigger.current?.focus();
+              }}
+            >
+              取消
+            </button>
+          </section>
+        )}
         <details className="notice">
           <summary>匯出檔案與其他財務系統交換</summary>
           <p>
@@ -666,7 +746,7 @@ function App() {
             </div>
           </div>
         )}
-        <p role="status" className="status">
+        <p role="status" className="status" ref={feedback} tabIndex={-1}>
           {message}
           {errors.length > 0 && !blocked
             ? " · 輸入未完整，尚未保存這次變更。"
@@ -702,57 +782,6 @@ function App() {
               以目前內容重新啟用保存
             </button>
           </div>
-        )}
-        {incoming && (
-          <section className="notice">
-            <h3>匯入預覽／確認載入資料</h3>
-            <p>{importSource}</p>
-            <p>
-              快照 {incoming.snapshots.length} 份 · 最近匯出{" "}
-              {dateText(incoming.exported?.at)} · 載入後狀態：
-              {incoming.state === "estimate" ? "待成交核對" : "使用者持倉"}
-            </p>
-            <p>
-              {incoming.portfolio.assets.length} 個標的，現金{" "}
-              {fmt(incoming.portfolio.cash)} 元，交割款{" "}
-              {fmt(incoming.portfolio.settlement)} 元。載入會取代 V4
-              {pendingCSV
-                ? "的持倉；現金、交割款與快照以確認當下內容保留。"
-                : pendingKind === "portfolio"
-                  ? "目前持倉與設定；快照清單以確認當下內容保留。"
-                  : "目前輸入與清單。"}
-              其他版本的保存資料保留。建議先匯出目前內容。
-            </p>
-            <button
-              className="primary"
-              onClick={() => {
-                const issues = validate(incoming.portfolio);
-                if (issues.length) {
-                  setMessage(issues.join("；"));
-                  return;
-                }
-                try {
-                  serializeFinancialBackup(incoming, 1024);
-                } catch (error) {
-                  setMessage((error as Error).message);
-                  return;
-                }
-                resetLookup();
-                setP(incoming.portfolio);
-                setSnapshots(incoming.snapshots);
-                setEvidence(incoming.evidence);
-                setPending(null);
-                setRecordState(incoming.state ?? "actual");
-                setBeforeEstimate(incoming.beforeEstimate);
-                setExported(incoming.exported);
-                setShock({});
-                setMessage("已載入資料，請查看保存狀態。");
-              }}
-            >
-              確認載入
-            </button>{" "}
-            <button onClick={() => setPending(null)}>取消</button>
-          </section>
         )}
         <section className="summary">
           <div>

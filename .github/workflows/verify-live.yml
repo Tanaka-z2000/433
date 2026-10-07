@@ -49,6 +49,13 @@ jobs:
         run: |
           export CHROMIUM_PATH="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
           python tests/v4_adversarial.py
+      - name: Demo preview visibility and touch or keyboard interaction
+        if: always()
+        env:
+          PORTAL_URL: https://tanaka-z2000.github.io/433/
+        run: |
+          export CHROMIUM_PATH="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          python tests/v4_demo_feedback.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
