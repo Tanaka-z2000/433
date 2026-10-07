@@ -10,6 +10,7 @@ import collections
 import csv
 import datetime as dt
 import hashlib
+import html
 import io
 import json
 import os
@@ -19,11 +20,48 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+import unicodedata
+from zoneinfo import ZoneInfo
 
 
 MAX_BYTES = 12 * 1024 * 1024
 MAX_ROWS = 10000
-MAX_AGE_DAYS = 62
+MAX_AGE_DAYS = 45
+TAIPEI = ZoneInfo("Asia/Taipei")
+CLASSIFICATION = {
+    "verifiedOn": "2026-10-07",
+    "sources": [
+        "https://twse-regulation.twse.com.tw/TW/law/DAT0201_print.aspx?FLCODE=FL033103",
+        "https://www.twse.com.tw/zh/products/system/dual-etf/introduction.html",
+    ],
+    "rationale": [
+        "Only products present in the official company/fund CSV can be classified.",
+        "Company entries must have a four-digit ordinary-stock code; 91-prefixed codes and depositary receipts are excluded.",
+        "ETF classes require an explicit official fund-type match plus a compatible ticker under the official coding rules.",
+        "Foreign-currency ETF classes and unrecognized types remain unsupported; a fund name mentioning USD does not determine its trading currency.",
+        "Bond ETF classification does not itself authorize a tax exemption; date-limited tax rules are handled by the application.",
+    ],
+}
+# Exact values reviewed from the 2026-10-06 official export. New values never
+# inherit a classification by substring matching or a ticker suffix alone.
+FUND_TYPES = {
+    "國內成分證券指數股票型基金": "index",
+    "國外成分證券指數股票型基金": "index",
+    "國內成分證券主動式交易所交易基金(股票)": "activeStock",
+    "國外成分證券主動式交易所交易基金(股票)": "activeStock",
+    "國外成分證券主動式交易所交易基金(債券)": "activeBond",
+    "國外成分證券平衡型指數股票型基金": "balanced",
+    "槓桿/反向指數股票型基金": "leveraged",
+    "指數股票型期貨信託基金": "futures",
+    "境外指數股票型基金": "overseas",
+    "連結式證券指數股票型基金": "linked",
+    "國外成份/加掛外幣證券指數股票型基金": "foreign",
+}
+CLASSIFICATION["rationale"].extend([
+    "The official foreign index-fund type contains both equity and bond ETFs; bond classification also requires a B code and the official full name explicitly identifying a bond fund.",
+    "Leveraged/inverse, futures and balanced ETF groups remain otherETF, never tax-exempt bondETF.",
+    "HTML character references in official name fields are decoded once as plain text and Unicode NFC-normalized; source hashes cover the unchanged downloaded CSV bytes.",
+])
 SOURCES = (
     {
         "id": "twse-companies",
@@ -104,9 +142,9 @@ def normalize_date(value, today=None):
         parsed = dt.date(year, month, day)
     except ValueError as error:
         raise CatalogError("Invalid source date") from error
-    today = today or dt.datetime.now(dt.timezone.utc).date()
+    today = today or dt.datetime.now(TAIPEI).date()
     age = (today - parsed).days
-    if age < -1 or age > MAX_AGE_DAYS:
+    if age < 0 or age > MAX_AGE_DAYS:
         raise CatalogError(f"Source date outside permitted freshness window: {parsed}")
     return parsed.isoformat()
 
@@ -130,7 +168,7 @@ def parse_source(raw, source, *, today=None, enforce_minimum=True):
                 raise CatalogError("Source exceeds the row limit")
             row = dict(zip(headers, (value.strip() for value in values)))
             ticker = row[source["ticker"]].upper()
-            if not re.fullmatch(r"[0-9A-Z]{4,12}", ticker):
+            if not re.fullmatch(r"[0-9A-Z]{4,8}", ticker):
                 raise CatalogError(f"Unexpected ticker: {ticker!r}")
             if ticker in seen:
                 raise CatalogError(f"Duplicate ticker in {source['id']}: {ticker}")
@@ -186,23 +224,24 @@ def write_json(path, value):
 
 
 def build_catalog(sources, fetched_at):
-    # Classification is deliberately closed until raw official type values have
-    # been inspected. Unknown products remain searchable without a tax default.
     securities = []
     for source in sources:
         fund = source["id"] == "twse-funds"
         for row in source["records"]:
+            product_type, currency = classify_fund(row) if fund else classify_company(row)
             securities.append({
                 "ticker": row["基金代號" if fund else "公司代號"],
-                "name": row["基金中文名稱" if fund else "公司名稱"],
-                "shortName": row["基金簡稱" if fund else "公司簡稱"],
-                "type": "unsupported",
+                "name": clean_name(row["基金中文名稱" if fund else "公司名稱"]),
+                "shortName": clean_name(row["基金簡稱" if fund else "公司簡稱"], 100),
+                "type": product_type,
                 "market": "TWSE",
-                "currency": "unknown",
+                "currency": currency,
                 "asOf": source["asOf"],
                 "sourceIds": [source["id"]],
             })
     securities.sort(key=lambda item: item["ticker"])
+    if len(securities) > MAX_ROWS:
+        raise CatalogError("Combined catalog exceeds the browser row limit")
     if len({item["ticker"] for item in securities}) != len(securities):
         raise CatalogError("Ticker conflict between official sources")
     if any(not item["name"] or not item["shortName"] for item in securities):
@@ -211,10 +250,84 @@ def build_catalog(sources, fetched_at):
         "schemaVersion": 1,
         "fetchedAt": fetched_at,
         "asOf": min(source["asOf"] for source in sources),
+        "classification": CLASSIFICATION,
         "sources": [{key: source[key] for key in ("id", "url", "asOf", "sha256", "rows")} for source in sources],
         "securities": securities,
         "stats": {"total": len(securities), "byType": dict(collections.Counter(item["type"] for item in securities))},
     }
+
+
+def clean_name(value, limit=300):
+    result = unicodedata.normalize("NFC", html.unescape(value)).strip()
+    # Browser validation counts JavaScript UTF-16 units, not Unicode points.
+    if not result or len(result.encode("utf-16-le")) // 2 > limit or any(ord(char) < 32 or ord(char) == 127 for char in result):
+        raise CatalogError("An official name is empty, too long or contains control characters")
+    return result
+
+
+def classify_company(row):
+    ticker = row["公司代號"]
+    names = row["公司名稱"] + " " + row["公司簡稱"]
+    # CSV membership plus the official ordinary-stock format is required.
+    # In particular, legacy four-digit TDRs cannot pass this check.
+    if (re.fullmatch(r"[1-9][0-9]{3}", ticker)
+            and not ticker.startswith("91")
+            and row.get("產業別") != "91"
+            and not re.search(r"(?:\bDR\b|存託|特別股|受益憑證|REIT|ETF)", names, re.I)):
+        return "stock", "TWD"
+    return "unsupported", "unknown"
+
+
+def classify_fund(row):
+    ticker = row["基金代號"]
+    kind = FUND_TYPES.get(row["基金類型"])
+    if re.fullmatch(r"[0-9]{5}[KMSCV]", ticker):
+        return "unsupported", "foreign"
+    if kind is None:
+        return "unsupported", "unknown"
+    if kind == "index":
+        bond_name = re.search(r"債券|公債|公司債", row["基金中文名稱"])
+        if re.fullmatch(r"00[0-9]{2,4}", ticker) and not bond_name:
+            return "equityETF", "TWD"
+        if (re.fullmatch(r"00[0-9]{3}B", ticker)
+                and bond_name
+                and not re.search(r"槓桿|反向|單日", row["基金中文名稱"])):
+            return "bondETF", "TWD"
+    elif kind == "activeStock" and re.fullmatch(r"00[0-9]{3}A", ticker):
+        return "equityETF", "TWD"
+    elif kind == "activeBond" and re.fullmatch(r"00[0-9]{3}D", ticker):
+        return "bondETF", "TWD"
+    elif kind == "balanced" and re.fullmatch(r"00[0-9]{3}T", ticker):
+        return "otherETF", "TWD"
+    elif kind == "leveraged" and re.fullmatch(r"00[0-9]{3}[LR]", ticker):
+        return "otherETF", "TWD"
+    elif kind == "futures" and re.fullmatch(r"00[0-9]{3}[ULR]", ticker):
+        return "otherETF", "TWD"
+    elif kind in {"overseas", "linked"} and re.fullmatch(r"00[0-9]{2,4}", ticker):
+        return "otherETF", "TWD"
+    return "unsupported", "unknown"
+
+
+def review_summary(candidate, sources, previous_path):
+    unknown = collections.Counter(
+        row["基金類型"] for source in sources if source["id"] == "twse-funds"
+        for row in source["records"] if row["基金類型"] not in FUND_TYPES
+    )
+    result = {"unknownFundTypes": dict(sorted(unknown.items())), "stats": candidate["stats"], "comparison": None}
+    if previous_path.is_file():
+        previous = json.loads(previous_path.read_text(encoding="utf-8"))
+        before = {row["ticker"]: row for row in previous["securities"]}
+        after = {row["ticker"]: row for row in candidate["securities"]}
+        fields = ("name", "shortName", "type", "currency")
+        result["comparison"] = {
+            "previousAsOf": previous["asOf"],
+            "previousTotal": len(before),
+            "currentTotal": len(after),
+            "addedTickers": sorted(set(after) - set(before)),
+            "removedTickers": sorted(set(before) - set(after)),
+            "changedTickers": sorted(ticker for ticker in set(before) & set(after) if any(before[ticker][field] != after[ticker][field] for field in fields)),
+        }
+    return result
 
 
 def main():
@@ -222,21 +335,35 @@ def main():
     parser.add_argument("--inspect", action="store_true", help="Download raw sources and report columns/types; do not produce a candidate")
     parser.add_argument("--output-dir", type=Path, default=Path("test-results/catalog"))
     parser.add_argument("--input-dir", type=Path, help="Rebuild from previously downloaded CSV artifacts without network access")
+    parser.add_argument("--previous-catalog", type=Path, default=Path(__file__).resolve().parents[1] / "public/data/twse-securities.json", help="Previous reviewed catalog for a change summary only; never modified")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     fetched_at = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    if args.input_dir:
+        # An offline rebuild must retain the true acquisition timestamp and
+        # prove these are the bytes inspected then, not claim a fresh download.
+        original = json.loads((args.input_dir / "inspection.json").read_text(encoding="utf-8"))
+        fetched_at = original["fetchedAt"]
+        fetched_date = dt.datetime.fromisoformat(fetched_at.replace("Z", "+00:00")).astimezone(TAIPEI).date()
+        recorded = {source["id"]: source for source in original["sources"]}
+    else:
+        fetched_date = dt.datetime.now(TAIPEI).date()
     sources = []
     for config in SOURCES:
         raw = (args.input_dir / config["file"]).read_bytes() if args.input_dir else download(config)
+        if args.input_dir and hashlib.sha256(raw).hexdigest() != recorded[config["id"]]["sha256"]:
+            raise CatalogError("Offline CSV bytes do not match the inspected source hash")
         (args.output_dir / config["file"]).write_bytes(raw)
-        sources.append(parse_source(raw, config))
+        sources.append(parse_source(raw, config, today=fetched_date))
     report = {"fetchedAt": fetched_at, "sources": [inspection(source) for source in sources]}
     write_json(args.output_dir / "inspection.json", report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if not args.inspect:
         catalog = build_catalog(sources, fetched_at)
+        review = review_summary(catalog, sources, args.previous_catalog)
+        write_json(args.output_dir / "review-summary.json", review)
         write_json(args.output_dir / "twse-securities.json", catalog)
-        print(json.dumps(catalog["stats"], ensure_ascii=False))
+        print(json.dumps(review, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
