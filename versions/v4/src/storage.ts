@@ -1,5 +1,24 @@
 import { type Asset, type Portfolio, type Plan, validate } from "./engine";
 import { CSV_CONTEXT, FINANCE_FORMAT } from "./interchange";
+// A cleared form is a valid stored document, but not a tradable portfolio.
+// Keep this exception exact; partially completed or insolvent portfolios still
+// pass through the normal validation rules.
+export function validateStoredPortfolio(p: Portfolio): string[] {
+  if (
+    p &&
+    p.version === 1 &&
+    Array.isArray(p.assets) &&
+    p.assets.length === 0 &&
+    p.cash === 0 &&
+    p.settlement === 0 &&
+    p.flow === 0 &&
+    p.cashFloor === 10 &&
+    p.cashTarget === null &&
+    p.tolerance === 2
+  )
+    return [];
+  return validate(p);
+}
 export const KEY = "433.portfolio.v4";
 export const BACKUP_LIMIT_BYTES = 32 * 1024 * 1024;
 export function serializeBackup(backup: Backup, reserve = 0): string {
@@ -87,7 +106,7 @@ export function parseBackup(text: string): Backup {
   }
   if (!x || ![1, 2, 3].includes(x.version) || !x.portfolio)
     throw new Error("備份格式或版本不支援");
-  const errors = validate(x.portfolio);
+  const errors = validateStoredPortfolio(x.portfolio);
   if (errors.length) throw new Error(errors.join("；"));
   if (
     !Array.isArray(x.snapshots) ||
@@ -106,20 +125,23 @@ export function parseBackup(text: string): Backup {
       (s.kind !== undefined &&
         !["actual", "estimate", "plan", "legacy"].includes(s.kind)) ||
       (s.sourcePortfolio !== undefined &&
-        validate(s.sourcePortfolio).length > 0) ||
+        validateStoredPortfolio(s.sourcePortfolio).length > 0) ||
       (s.mode !== undefined &&
         !["full", "contribute", "band"].includes(s.mode)) ||
       typeof s.name !== "string" ||
       typeof s.date !== "string" ||
       !Number.isFinite(Date.parse(s.date)) ||
-      validate(s.portfolio).length
+      validateStoredPortfolio(s.portfolio).length
     )
       throw new Error("快照內容無效");
     ids.add(s.id);
   }
   if (x.state !== undefined && !["actual", "estimate"].includes(x.state))
     throw new Error("持倉核對狀態無效");
-  if (x.beforeEstimate !== undefined && validate(x.beforeEstimate).length)
+  if (
+    x.beforeEstimate !== undefined &&
+    validateStoredPortfolio(x.beforeEstimate).length
+  )
     throw new Error("核對前持倉無效");
   if (
     x.exported &&

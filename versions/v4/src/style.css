@@ -812,3 +812,158 @@ td.explanation {
   outline: 3px solid #43a59a;
   outline-offset: 3px;
 }
+
+.allocation-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr);
+  gap: 32px;
+  align-items: center;
+}
+.allocation-visual {
+  text-align: center;
+  min-width: 0;
+}
+.allocation-donut {
+  width: 210px;
+  max-width: 100%;
+  display: block;
+  margin: auto;
+}
+.donut-label {
+  font-size: 11px;
+  fill: #435d6d;
+}
+.donut-currency {
+  font-size: 9px;
+  fill: #607480;
+}
+.allocation-total {
+  font-size: 24px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.allocation-note {
+  color: #85591e;
+  font-size: 13px;
+}
+.allocation-placeholder {
+  border: 12px solid #e6eded;
+  border-radius: 50%;
+  width: 160px;
+  height: 160px;
+  display: grid;
+  place-items: center;
+  margin: auto;
+  color: #607480;
+}
+.allocation-group {
+  border-bottom: 1px solid #e6ecec;
+  padding: 10px 0;
+}
+.allocation-group summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+.allocation-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.allocation-label::before {
+  content: "▸";
+  color: #607480;
+}
+.allocation-group[open] .allocation-label::before {
+  content: "▾";
+}
+.allocation-label i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.allocation-amount,
+.allocation-percent {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.allocation-percent {
+  min-width: 65px;
+  text-align: right;
+  font-weight: 700;
+}
+.allocation-items {
+  padding: 0;
+  margin: 14px 0;
+  list-style: none;
+  font-size: 13px;
+}
+.allocation-items li,
+.allocation-items > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 8px;
+}
+.allocation-items span,
+.allocation-items dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.allocation-items dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.reset-trigger {
+  color: #963d31;
+}
+.reset-dialog {
+  border: 1px solid #d2dddf;
+  border-radius: 14px;
+  padding: 26px;
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  color: #192b3b;
+}
+.reset-dialog::backdrop {
+  background: #102c3c99;
+}
+.reset-dialog h2 {
+  margin-top: 0;
+  font-size: 21px;
+}
+.reset-dialog p {
+  font-size: 14px;
+}
+.reset-confirm-label {
+  margin: 20px 0;
+}
+button.danger {
+  background: #973d32;
+  color: white;
+  border-color: #973d32;
+}
+@media (max-width: 700px) {
+  .allocation-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .allocation .section-heading {
+    flex-wrap: wrap;
+  }
+  .allocation-group summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+  }
+  .allocation-label {
+    grid-column: 1 / -1;
+  }
+  .allocation-amount {
+    padding-left: 25px;
+  }
+}
