@@ -6,6 +6,9 @@ export interface Version {
   status: "original" | "preview" | "stable";
   description: string;
   features: string[];
+  release?: string;
+  compatibility?: string;
+  temporary?: boolean;
 }
 export function readVersions(root: string): Version[] {
   const list: Version[] = JSON.parse(
@@ -22,6 +25,11 @@ export function readVersions(root: string): Version[] {
       !["original", "preview", "stable"].includes(version.status) ||
       typeof version.title !== "string" ||
       typeof version.description !== "string" ||
+      (version.release !== undefined && typeof version.release !== "string") ||
+      (version.compatibility !== undefined &&
+        typeof version.compatibility !== "string") ||
+      (version.temporary !== undefined &&
+        typeof version.temporary !== "boolean") ||
       !Array.isArray(version.features) ||
       !version.features.every((x) => typeof x === "string")
     )
@@ -56,7 +64,7 @@ export function versionCards(list: Version[]): string {
   return list
     .map(
       (v) =>
-        `<article class="version-card"><div class="card-top"><span class="version-number">${v.id.toUpperCase()}</span><span class="badge ${v.status}">${labels[v.status]}</span></div><h2>${escapeHTML(v.title)}</h2><p>${escapeHTML(v.description)}</p><ul class="features">${v.features.map((f) => `<li>${escapeHTML(f)}</li>`).join("")}</ul><a class="enter" href="./versions/${v.id}/">進入 ${v.id.toUpperCase()} ${escapeHTML(v.title)} <span aria-hidden="true">↗</span></a><small>此版本的資料保存在目前瀏覽器</small></article>`,
+        `<article class="version-card"><div class="card-top"><span class="version-number">${v.id.toUpperCase()}</span><span class="badge ${v.status}">${labels[v.status]}</span></div><h2>${escapeHTML(v.title)}</h2><p>${escapeHTML(v.description)}</p><ul class="features">${v.features.map((f) => `<li>${escapeHTML(f)}</li>`).join("")}</ul><a class="enter" href="./versions/${v.id}/">進入 ${v.id.toUpperCase()} ${escapeHTML(v.title)} <span aria-hidden="true">↗</span></a>${v.release ? `<small>版本 ${escapeHTML(v.release)}</small>` : ""}${v.compatibility ? `<p class="compatibility">${escapeHTML(v.compatibility)}</p>` : ""}${v.temporary ? `<a class="temporary-link" href="./versions/${v.id}/?mode=temporary">暫用模式（不讀寫既有資料）</a>` : ""}<small>此版本的資料保存在目前瀏覽器</small></article>`,
     )
     .join("\n");
 }
