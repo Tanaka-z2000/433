@@ -54,7 +54,8 @@ export default defineConfig({
         );
         if (!version) return html;
         const nav = `<nav aria-label="版本導覽" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 20px;background:#e7f1ed;color:#29584d;font:13px/1.5 system-ui,sans-serif"><a href="../../" style="color:#176b58;padding:4px 0">← 返回版本入口</a><span>${version.id.toUpperCase()} · ${escapeHTML(version.title)}${version.release ? ` · ${escapeHTML(version.release)} · 建置 ${escapeHTML(buildId)}` : ""}</span></nav>`;
-        return html.replace(/<body([^>]*)>/, `<body$1>${nav}`);
+        const scope = `<aside aria-label="適用範圍" style="margin:0;padding:10px 20px;background:#f1f5f2;color:#29584d;font:13px/1.6 system-ui,sans-serif">暫時僅適用台股投資人，以新臺幣試算台灣市場股票與 ETF。包含在台掛牌的海外資產 ETF；不適用直接交易海外股票、外幣交易或期貨契約。</aside>`;
+        return html.replace(/<body([^>]*)>/, `<body$1>${nav}${scope}`);
       },
     },
   ],

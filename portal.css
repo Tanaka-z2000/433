@@ -74,6 +74,14 @@ h1 {
   color: #748275;
   margin: 0;
 }
+.intro .scope-note {
+  margin-top: 24px;
+  padding: 14px 18px;
+  border-left: 3px solid #64826c;
+  background: #e7f1ed;
+  border-radius: 0 8px 8px 0;
+  color: #29584d;
+}
 .section-title {
   display: flex;
   justify-content: space-between;
