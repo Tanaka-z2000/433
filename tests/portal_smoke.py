@@ -17,7 +17,7 @@ with sync_playwright() as p:
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.goto(base, wait_until='networkidle')
     assert page.get_by_role('heading', name='可使用的版本').is_visible()
-    assert page.locator('.version-card').count() == 1
+    assert page.locator('.version-card').count() == len(json.loads(Path('versions.json').read_text()))
     page.evaluate('(backup) => {localStorage.setItem("433.portfolio.v1", JSON.stringify(backup)); localStorage.setItem("433.portfolio.v2", "other-version-marker");}', backup)
     original = page.evaluate('localStorage.getItem("433.portfolio.v1")')
     page.reload(wait_until='networkidle')

@@ -311,3 +311,12 @@ footer span {
     transition: none !important;
   }
 }
+.compatibility {
+  font-size: 12px;
+  color: #576e66;
+}
+.temporary-link {
+  display: block;
+  margin: 12px 0;
+  font-size: 13px;
+}
