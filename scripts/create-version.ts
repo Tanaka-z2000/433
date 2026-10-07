@@ -10,6 +10,10 @@ export function createVersion(root: string, id: string, from = "v1"): void {
   const target = resolve(root, "versions", id);
   if (list.some((v) => v.id === id) || existsSync(target))
     throw new Error("版本已存在，禁止覆蓋");
+  if (
+    Number(id.slice(1)) <= Math.max(...list.map((v) => Number(v.id.slice(1))))
+  )
+    throw new Error("新版本 ID 必須遞增，不能重用已封存版本的資料保存鍵");
   const storagePath = resolve(root, `versions/${from}/src/storage.ts`);
   const storage = readFileSync(storagePath, "utf8");
   const isolated = storage.replace(

@@ -1,4 +1,4 @@
-import { type Portfolio, type Plan } from "./engine";
+import { normalizeTicker, type Portfolio, type Plan } from "./engine";
 export const portfolioTotal = (p: Portfolio) =>
   p.cash +
   p.settlement +
@@ -46,7 +46,7 @@ export function scenarioComparison(
     (sum, t) => sum + (t.afterValue * (shocks[t.asset.id] ?? 0)) / 100,
     0,
   );
-  return {
+  const result = {
     beforeBase,
     beforeChange,
     beforeTotal: beforeBase + beforeChange,
@@ -54,13 +54,18 @@ export function scenarioComparison(
     afterChange,
     afterTotal: r.afterTotal + afterChange,
   };
+  return Object.values(result).every(Number.isFinite) ? result : null;
 }
 export function compareHoldings(a: Portfolio, b: Portfolio) {
   // CSV imports regenerate IDs. Compare by ticker, not transient UI ID.
-  const tickers = [...new Set([...a.assets, ...b.assets].map((x) => x.ticker))];
+  const tickers = [
+    ...new Set(
+      [...a.assets, ...b.assets].map((x) => normalizeTicker(x.ticker)),
+    ),
+  ];
   return tickers.map((ticker) => {
-    const old = a.assets.find((x) => x.ticker === ticker),
-      next = b.assets.find((x) => x.ticker === ticker);
+    const old = a.assets.find((x) => normalizeTicker(x.ticker) === ticker),
+      next = b.assets.find((x) => normalizeTicker(x.ticker) === ticker);
     return {
       ticker,
       oldShares: old?.shares ?? 0,

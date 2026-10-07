@@ -36,6 +36,18 @@ function fixture() {
   return root;
 }
 describe("version lifecycle", () => {
+  it("does not reuse retired version IDs or their browser storage", () => {
+    const root = fixture();
+    try {
+      createVersion(root, "v4");
+      expect(() => createVersion(root, "v2")).toThrow("已封存版本");
+      expect(() => createVersion(root, "v3")).toThrow("已封存版本");
+      createVersion(root, "v5", "v4");
+      expect(readVersions(root).map((v) => v.id)).toEqual(["v1", "v4", "v5"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("creates a new independent page without touching the original or its storage", () => {
     const root = fixture();
     try {

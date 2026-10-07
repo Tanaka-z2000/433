@@ -46,7 +46,7 @@ export default defineConfig({
               "<!-- FUTURE_NOTE -->",
               versions.length === 1
                 ? "新版本建置完成後，會出現在上方供你試用。目前沒有其他已建置版本。"
-                : "後續改版也會以新的選項加入，既有版本持續保留。",
+                : "目前以 V4 與 V1 作為更新對照。V2、V3 的程式已封存於 Git 歷史，可從清理前的 commit 還原。",
             );
         const version = versions.find(
           (v) =>
