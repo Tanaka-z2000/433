@@ -1,8 +1,28 @@
-# 433｜個人資產再配置
+# 433｜資產再配置版本入口
 
 以實際持倉、本次目標與交易限制，產生可核對的臺股 ETF 再平衡方案。歷史專案名稱保留為 433，**不預設 40／30／30、4312 或其他固定權重**。
 
-## 使用方式
+## 網頁版本
+
+正式入口：https://tanaka-z2000.github.io/433/
+
+原始版 V1：https://tanaka-z2000.github.io/433/versions/v1/
+
+首頁只提供版本選擇，不讀寫持倉資料。V1 保留原有五個區塊、計算與保存方式，並提供返回入口的連結。V1 沿用 `433.portfolio.v1`，在相同瀏覽器、相同網址來源下，入口建立前的持倉與快照仍可讀取。不同路徑本身不會隔離 localStorage，因此每個新版本必須使用不同保存鍵。
+
+版本清單由 `versions.json` 管理。每一版本使用獨立的 `versions/<id>/index.html`、`src/` 與測試目錄。Vite 一次建置入口與所有已登記版本；沒有客戶端路由，直接開啟版本網址或重新整理也能使用。
+
+新增版本範例：
+
+```sh
+npm run version:new -- v2 v1
+```
+
+此指令複製 V1 為獨立 V2，建立新的資料保存鍵，並登記為試用版。若版本已存在則停止，不覆蓋。後續只修改 `versions/v2/`，再更新 `versions.json` 的名稱、功能差異與狀態。完成測試後部署，入口才會出現可實際使用的新選項。不要為了新功能修改 V1；保留的來源內容可透過 Git 比對。
+
+各版本目前共用鎖定的套件與建置工具。更新共用依賴時需對所有版本執行測試；個別介面、計算與保存程式不共用，避免新版功能更動影響舊版。
+
+## 原始版使用方式
 
 1. 填現金餘額與 T+2 交割款：正數應收、負數應付。交割款指尚未反映於現金餘額的金額；完成交割後更新餘額並清除對應款項，避免重複計算。
 2. 新增實際持倉、股數與試算價格。自行確認哪些標的是「台股正二」，監測清單不代表持倉。
@@ -60,14 +80,16 @@ npm run format:check
 
 所有依賴以 package-lock.json 鎖定，正式頁面不載入 CDN React、Tailwind 或 Babel。
 
-- `src/engine.ts`：純計算函式、驗證、交易費用與方案。
-- `src/storage.ts`：版本化備份、CSV 與檔案下載。
-- `src/main.tsx`：繁體中文響應式介面。
-- `tests/engine.test.ts`：資金守恆、限制、取整、費用、輸入與可攜資料測試。
+- `versions/v1/src/engine.ts`：純計算函式、驗證、交易費用與方案。
+- `versions/v1/src/storage.ts`：版本化備份、CSV 與檔案下載。
+- `versions/v1/src/main.tsx`：繁體中文響應式介面。
+- `versions/v1/tests/engine.test.ts`：資金守恆、限制、取整、費用、輸入與可攜資料測試。
 - `tests/browser_smoke.py`：選用 Chromium 操作驗證（Python Playwright）。先建置並在 8001 埠啟動 `python3 -m http.server 8001 --directory dist`，再執行 `python3 tests/browser_smoke.py`。可透過 `PORTFOLIO_URL`、`CHROMIUM_PATH` 指定網址與瀏覽器。
 
 ## GitHub Pages
 
-PR 自動執行測試、型別檢查與建置。合併到 main 後，Pages workflow 建置 `dist` 再部署；首次需在儲存庫 Settings → Pages 選擇 GitHub Actions。也可手動觸發 Pages workflow。
+`tests/portal_smoke.py` 驗證入口連結、原始版返回入口、既有資料延續及手機排版。
 
-Vite 使用相對資源路徑，支援 `/433/` 子目錄。不要直接發布原始碼根目錄作靜態頁面；應發布 `dist`。舊副本已移除，可由 Git 歷史取回。
+PR 自動執行所有版本的測試、型別檢查與建置。合併到 main 後，Pages workflow 建置 `dist` 再部署；首次需在儲存庫 Settings → Pages 選擇 GitHub Actions。也可手動觸發 Pages workflow。
+
+部署後會核對正式入口及 V1 五個區塊。Vite 使用相對資源路徑，支援 `/433/` 與 `/433/versions/v1/` 子目錄。不要直接發布原始碼根目錄作靜態頁面；應發布 `dist`。舊副本已移除，可由 Git 歷史取回。
