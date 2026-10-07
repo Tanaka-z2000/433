@@ -18,6 +18,16 @@ def upload(page,raw,name):
     page.locator('input[type=file]').set_input_files({'name':name,'mimeType':'text/plain','buffer':raw})
 def confirm(page):
     page.get_by_role('button',name='確認載入',exact=True).click()
+    # The previous "saved" label can remain until React commits the new state.
+    # First wait for that commit, then compare real storage against the complete
+    # current financial export; never use the old status label as a write barrier.
+    expect(page.get_by_role('button',name='確認載入',exact=True)).to_have_count(0)
+    expected=json.loads(downloaded(page,'匯出 JSON 備份'))
+    expected.pop('financeFormat',None)
+    page.wait_for_function('''({key,expected}) => {
+        const raw=localStorage.getItem(key);
+        return raw !== null && JSON.stringify(JSON.parse(raw)) === JSON.stringify(expected);
+    }''',arg={'key':KEY,'expected':expected},timeout=15000)
     expect(page.locator('.storage-panel')).to_contain_text('已保存於此瀏覽器')
 def downloaded(page,button):
     with page.expect_download() as event:page.get_by_role('button',name=button,exact=True).click()
@@ -50,7 +60,7 @@ with sync_playwright() as pw:
         other.on('pageerror',lambda e:report['errors'].append(str(e)))
         other.goto(BASE+'versions/v4/',wait_until='networkidle')
         upload(other,raw_json,'exported.json');confirm(other)
-        check('Downloaded JSON restores all data in a separate browser context',stored(other)=={k:v for k,v in exported.items() if k!='financeFormat'})
+        check('Downloaded JSON restores all financial data in a separate browser context',{k:v for k,v in stored(other).items() if k!='exported'}=={k:v for k,v in exported.items() if k not in ['financeFormat','exported']})
         expect(other.locator('.storage-panel')).to_contain_text('內容與最近匯出相同')
         check('Export change detection stays accurate after dictionary is stripped', 'financeFormat' not in stored(other))
         other.reload();expect(other.locator('.storage-panel')).to_contain_text('已保存於此瀏覽器')
