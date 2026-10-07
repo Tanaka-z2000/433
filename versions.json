@@ -26,5 +26,20 @@
     "release": "2.0.0",
     "compatibility": "可手動匯入 V1 JSON；V2 資料獨立保存。V2 備份請由 V2 讀取。",
     "temporary": true
+  },
+  {
+    "id": "v3",
+    "title": "檢核修正版",
+    "status": "preview",
+    "description": "修正費用取整與保存狀態，強化匯入防護，經大量交易與瀏覽器壓力驗證。",
+    "features": [
+      "十進位費用計算，修正半分錢邊界",
+      "保存狀態復原與分頁衝突防護",
+      "100 標的、50 快照與連續輸入驗證",
+      "支援手動匯入 V1／V2 備份"
+    ],
+    "release": "3.0.0",
+    "compatibility": "可手動匯入 V1／V2 JSON；V3 獨立保存，原有版本與資料保留。",
+    "temporary": true
   }
 ]

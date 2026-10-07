@@ -1,0 +1,47 @@
+name: Verify live website
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Publish GitHub Pages"]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  live:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright==1.62.0
+      - run: python -m playwright install --with-deps chromium
+      - name: Exercise deployed portal and all versions
+        env:
+          PORTAL_URL: https://tanaka-z2000.github.io/433/
+          PORTFOLIO_URL: https://tanaka-z2000.github.io/433/versions/v1/
+        run: |
+          export CHROMIUM_PATH="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          python tests/portal_smoke.py
+          python tests/browser_smoke.py
+          python tests/v2_smoke.py
+          python tests/v3_smoke.py
+      - name: Independent V3 audit and browser pressure tests
+        if: always()
+        env:
+          PORTAL_URL: https://tanaka-z2000.github.io/433/
+          EXPECTED_COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          export CHROMIUM_PATH="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          python tests/v3_audit.py
+          python tests/v3_pressure.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-verification-evidence
+          path: test-results/

@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='433-browser-') as directory:
         else:
             raise RuntimeError('Local preview server did not start')
         env = {**os.environ, 'PORTAL_URL': 'http://127.0.0.1:8013/433/', 'PORTFOLIO_URL':'http://127.0.0.1:8013/433/versions/v1/'}
-        for script in ['tests/portal_smoke.py', 'tests/browser_smoke.py', 'tests/v2_smoke.py']:
+        for script in sys.argv[1:] or ['tests/portal_smoke.py', 'tests/browser_smoke.py', 'tests/v2_smoke.py', 'tests/v3_smoke.py', 'tests/v3_audit.py', 'tests/v3_pressure.py']:
             subprocess.run([sys.executable, script], env=env, check=True)
     finally:
         server.terminate()
