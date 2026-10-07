@@ -41,5 +41,20 @@
     "release": "3.0.0",
     "compatibility": "可手動匯入 V1／V2 JSON；V3 獨立保存，原有版本與資料保留。",
     "temporary": true
+  },
+  {
+    "id": "v4",
+    "title": "台股標的版",
+    "status": "preview",
+    "description": "依證交所官方名錄在本機查找代號與全稱，依已核對商品帶入費率，保留自訂設定。",
+    "features": [
+      "代號、全稱與簡稱雙向查找",
+      "一般股票與已核對 ETF 費率預設",
+      "官方資料日期、來源及失效保護",
+      "V1–V3 JSON 匯入與名稱備份"
+    ],
+    "release": "4.0.0",
+    "compatibility": "可手動匯入 V1–V3 JSON；V4 獨立保存，備份結構版本 3 請由 V4 讀取。",
+    "temporary": true
   }
 ]

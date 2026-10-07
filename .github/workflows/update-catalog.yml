@@ -1,0 +1,37 @@
+name: Inspect official TWSE catalog
+on:
+  pull_request:
+    paths:
+      - scripts/update-catalog.py
+      - tests/catalog_pipeline_test.py
+      - .github/workflows/update-catalog.yml
+  workflow_dispatch:
+  # This checks the provider weekly; the provider documents monthly updates.
+  # The result is a candidate artifact only, never an automatic site commit.
+  schedule:
+    - cron: "23 2 * * 1"
+permissions:
+  contents: read
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate parser safeguards
+        run: python -m unittest discover -s tests -p catalog_pipeline_test.py
+      - name: Inspect official open CSV sources
+        if: github.event_name == 'pull_request'
+        run: python scripts/update-catalog.py --inspect --output-dir test-results/catalog
+      - name: Build a reviewable catalog candidate
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        run: python scripts/update-catalog.py --output-dir test-results/catalog
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: official-twse-catalog
+          path: test-results/catalog/
+          retention-days: 30
