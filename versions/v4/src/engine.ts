@@ -334,6 +334,13 @@ export function plan(p: Portfolio, mode: Mode): Plan {
   if (!hasTarget)
     result.notes.push("未設定本次目標：僅檢查現況，不自動分配其餘資金。");
   else {
+    if (
+      Math.abs((cash / result.afterTotal) * 100 - p.cashTarget!) >
+      Math.max(p.tolerance, 0.01)
+    )
+      result.notes.push(
+        "現金比例仍超出目標容許偏差；交易限制、股數取整與費用可能使目標無法達成。",
+      );
     const deviations = result.trades.filter(
       (t) =>
         Math.abs(

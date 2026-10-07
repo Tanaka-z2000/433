@@ -32,6 +32,14 @@ import {
 } from "./storage";
 import "./style.css";
 import { Allocation } from "./Allocation";
+import {
+  AllocationComparison,
+  TradeReview,
+  SnapshotTimeline,
+} from "./Workflow";
+import { Drafts } from "./Drafts";
+import { CSVMapper } from "./CSVMapper";
+import { inspectCSV, mappedPortfolio, type CSVTable } from "./csvMapping";
 import { ResetPortfolio } from "./ResetPortfolio";
 import { SecurityPicker } from "./SecurityPicker";
 import {
@@ -180,6 +188,12 @@ function App() {
     [evidence, setEvidence] = useState<Evidence[]>(initial.data.evidence);
   const [message, setMessage] = useState(initial.message),
     [mode, setMode] = useState<Mode>("full");
+  const [mappingFile, setMappingFile] = useState<{
+    table: CSVTable;
+    name: string;
+    sequence: number;
+  } | null>(null);
+  const [task, setTask] = useState("custom");
   const [pending, setPending] = useState<Backup | null>(null),
     [name, setName] = useState(""),
     [shock, setShock] = useState<Record<string, number>>({});
@@ -206,9 +220,9 @@ function App() {
     previewHeading.current?.scrollIntoView({ block: "start" });
   }, [pending]);
   const [pendingKind, setPendingKind] = useState<
-    "backup" | "csv" | "portfolio"
+    "backup" | "csv" | "external" | "portfolio"
   >("backup");
-  const pendingCSV = pendingKind === "csv";
+  const pendingCSV = pendingKind === "csv" || pendingKind === "external";
   const [lookupRevision, setLookupRevision] = useState(0);
   const manualFeeSelections = useRef(new Set<string>());
   const [compareA, setCompareA] = useState("");
@@ -250,7 +264,10 @@ function App() {
           ...backup,
           state:
             pending.state === "estimate" ? ("estimate" as const) : backup.state,
-          portfolio: { ...p, assets: pending.portfolio.assets },
+          portfolio:
+            pendingKind === "external"
+              ? mappedPortfolio(p, pending.portfolio.assets)
+              : { ...p, assets: pending.portfolio.assets },
         }
       : pending && pendingKind === "portfolio"
         ? {
@@ -260,6 +277,9 @@ function App() {
             beforeEstimate: pending.beforeEstimate,
           }
         : pending;
+  const incomingIssues = incoming
+    ? validateStoredPortfolio(incoming.portfolio)
+    : [];
   const resetLookup = () => {
     setLookupRevision((revision) => revision + 1);
     manualFeeSelections.current.clear();
@@ -400,12 +420,20 @@ function App() {
     const sequence = ++importSequence.current;
     setPending(null);
     setPendingKind("backup");
+    setMappingFile(null);
     try {
       const csv = file.name.toLowerCase().endsWith(".csv");
       if (file.size > (csv ? 8_000_000 : BACKUP_LIMIT_BYTES))
         throw new Error(csv ? "CSV 檔案請小於 8 MB" : "JSON 檔案請小於 32 MiB");
       const text = await file.text();
       if (sequence !== importSequence.current) return;
+      if (csv) {
+        const inspected = inspectCSV(text);
+        if (!inspected.native) {
+          setMappingFile({ table: inspected.table, name: file.name, sequence });
+          return;
+        }
+      }
       const holdings = csv ? parseHoldingsCSV(text) : undefined;
       const data = holdings
         ? {
@@ -433,6 +461,7 @@ function App() {
   }
   const demo = () => {
     importSequence.current++;
+    setMappingFile(null);
     setImportSource("示範資料，非你的實際持倉");
     const demoIdentity = (asset: Asset): Asset => {
       const security = catalog && findByTicker(catalog, asset.ticker);
@@ -601,6 +630,8 @@ function App() {
             onReset={() => {
               // Invalidate in-flight imports as well as an already visible preview.
               importSequence.current++;
+              setMappingFile(null);
+              setTask("custom");
               setPending(null);
               resetLookup();
               setP(initialPortfolio());
@@ -619,6 +650,26 @@ function App() {
             }}
           />
         </div>
+        {mappingFile && (
+          <CSVMapper
+            key={mappingFile.sequence}
+            table={mappingFile.table}
+            name={mappingFile.name}
+            onCancel={() => {
+              importSequence.current++;
+              setMappingFile(null);
+            }}
+            onPreview={(assets) => {
+              if (mappingFile.sequence !== importSequence.current) return;
+              setImportSource(
+                `${mappingFile.name} · 外部 CSV（已確認股數與 TWD 單位）`,
+              );
+              setPendingKind("external");
+              setPending({ ...backup, portfolio: { ...p, assets } });
+              setMappingFile(null);
+            }}
+          />
+        )}
         {incoming && (
           <section
             className="notice import-preview"
@@ -647,9 +698,71 @@ function App() {
                   : "目前輸入與清單。"}
               其他版本的保存資料保留。建議先匯出目前內容。
             </p>
+            {pendingCSV && (
+              <>
+                <p>
+                  下表列出新增、變更與移除的持倉；未出現在檔案的原持倉會移除。同代號只是對照，不會將兩份股數相加。
+                </p>
+                <div className="table-scroll">
+                  <table className="import-diff">
+                    <thead>
+                      <tr>
+                        <th>代號</th>
+                        <th>異動</th>
+                        <th>股數：目前 → 匯入</th>
+                        <th>價格：目前 → 匯入</th>
+                        <th>市值差額</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compareHoldings(p, incoming.portfolio).map((row) => (
+                        <tr key={row.ticker}>
+                          <td>{row.ticker}</td>
+                          <td>
+                            {row.oldPrice === null
+                              ? "新增"
+                              : row.newPrice === null
+                                ? "移除"
+                                : row.oldShares === row.newShares &&
+                                    row.oldPrice === row.newPrice
+                                  ? "數量價格不變"
+                                  : "變更"}
+                          </td>
+                          <td>
+                            {fmt(row.oldShares)} → {fmt(row.newShares)}
+                          </td>
+                          <td>
+                            {row.oldPrice === null ? "—" : fmt(row.oldPrice)} →{" "}
+                            {row.newPrice === null ? "—" : fmt(row.newPrice)}
+                          </td>
+                          <td>${fmt(row.valueChange)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {pendingKind === "external" && (
+                  <p className="hint">
+                    同代號保留原分類與費率；新標的使用其他分類、股票標準費率（手續費
+                    0.1425%、賣出稅 0.3%、最低 0 元），ETF
+                    請再核對。名單改變時全部目標留白；現金、交割款及快照保留。
+                  </p>
+                )}
+              </>
+            )}
+            {!!incomingIssues.length && (
+              <p role="alert">{incomingIssues.join("；")}</p>
+            )}
+            {blocked && (
+              <p role="alert">
+                目前因讀取失敗或分頁衝突停止保存；請先備份並處理「資料保存狀態」，再確認載入。
+              </p>
+            )}
             <button
               className="primary"
+              disabled={blocked || !!incomingIssues.length}
               onClick={() => {
+                if (blocked) return;
                 const issues = validateStoredPortfolio(incoming.portfolio);
                 if (issues.length) {
                   setMessage(issues.join("；"));
@@ -670,6 +783,7 @@ function App() {
                 setBeforeEstimate(incoming.beforeEstimate);
                 setExported(incoming.exported);
                 setShock({});
+                setTask("custom");
                 setMessage("已載入資料，請查看保存狀態。");
                 feedback.current?.focus({ preventScroll: true });
                 feedback.current?.scrollIntoView({ block: "center" });
@@ -832,12 +946,61 @@ function App() {
           </div>
         </section>
         <Allocation portfolio={p} estimated={recordState === "estimate"} />
+        <AllocationComparison
+          portfolio={p}
+          result={planIssues.length ? null : result}
+        />
         <section className="panel">
           <div className="section-heading">
             <h2>
               <b>01</b> 現金與本次目標
             </h2>
             <span>所有金額均為新臺幣</span>
+          </div>
+          <div className="task-entry" aria-label="本次操作目的">
+            <p>
+              這次想做什麼？選擇後會調整本次資金正負與試算模式，現有持倉不變。
+            </p>
+            <div className="toolbar">
+              {[
+                { id: "contribution", label: "本次投入資金" },
+                { id: "withdrawal", label: "本次提領資金" },
+                { id: "rebalance", label: "檢查再平衡" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  aria-pressed={task === t.id}
+                  onClick={() => {
+                    setTask(t.id);
+                    if (t.id === "contribution") {
+                      update({
+                        flow: Number.isFinite(p.flow) ? Math.abs(p.flow) : 0,
+                      });
+                      setMode("contribute");
+                    } else if (t.id === "withdrawal") {
+                      update({
+                        flow: Number.isFinite(p.flow) ? -Math.abs(p.flow) : 0,
+                      });
+                      setMode("full");
+                    } else {
+                      update({ flow: 0 });
+                      setMode("band");
+                    }
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {task !== "custom" && (
+              <p role="status">
+                {task === "contribution"
+                  ? "請在本次投入／提領填入正數；只用新增資金買進，不賣出。"
+                  : task === "withdrawal"
+                    ? "請在本次投入／提領填入負數；試算賣出與現金下限，並核對 T+2 交割。"
+                    : "已將本次投入／提領設為 0；檢查容許區間，仍可自行更改。"}
+              </p>
+            )}
           </div>
           <div className="field-grid">
             <NumberField
@@ -853,7 +1016,10 @@ function App() {
             <NumberField
               label="本次投入／提領（正投負提）"
               value={p.flow}
-              onChange={(n) => update({ flow: n! })}
+              onChange={(n) => {
+                setTask("custom");
+                update({ flow: n! });
+              }}
             />
             <NumberField
               label="現金下限 %"
@@ -1239,7 +1405,10 @@ function App() {
                   <button
                     className={`plan-card ${r.mode === mode ? "selected" : ""}`}
                     key={r.mode}
-                    onClick={() => setMode(r.mode)}
+                    onClick={() => {
+                      setTask("custom");
+                      setMode(r.mode);
+                    }}
                   >
                     <strong>{modes[r.mode]}</strong>
                     <span>
@@ -1287,6 +1456,7 @@ function App() {
                     : "先賣超額，再按目標缺口由大到小買進，依資金與交易單位取整。"}{" "}
                 所有價格與成本均為估計。
               </p>
+              <TradeReview portfolio={p} result={result} />
               <div className="result-metrics">
                 <div>
                   調後總資產<strong>${fmt(result.afterTotal)}</strong>
@@ -1412,6 +1582,22 @@ function App() {
           )}
         </section>
         <section className="panel">
+          <Drafts
+            key={lookupRevision}
+            portfolio={p}
+            snapshots={snapshots}
+            catalog={catalog}
+            today={today}
+            disabled={
+              blocked ||
+              !!errors.length ||
+              recordState === "estimate" ||
+              snapshots.length >= SNAPSHOT_LIMIT
+            }
+            onSave={(snapshot) => addSnapshot(snapshot)}
+          />
+        </section>
+        <section className="panel">
           <div className="section-heading">
             <h2>
               <b>04</b> 情境試算
@@ -1509,6 +1695,7 @@ function App() {
               份快照。達到上限將停止新增，不自動刪除；請先匯出並整理紀錄。
             </p>
           )}
+          <SnapshotTimeline snapshots={snapshots} />
           {!!snapshots.length && (
             <details open className="snapshot-comparison">
               <summary>比較快照差異</summary>
@@ -1642,6 +1829,7 @@ function App() {
                     <button
                       onClick={() => {
                         importSequence.current++;
+                        setMappingFile(null);
                         setImportSource(
                           `還原快照：${s.name} · ${recordLabels[s.kind ?? "legacy"]}`,
                         );
