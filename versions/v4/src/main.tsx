@@ -28,8 +28,11 @@ import {
   storageSize,
   BACKUP_LIMIT_BYTES,
   serializeFinancialBackup,
+  validateStoredPortfolio,
 } from "./storage";
 import "./style.css";
+import { Allocation } from "./Allocation";
+import { ResetPortfolio } from "./ResetPortfolio";
 import { SecurityPicker } from "./SecurityPicker";
 import {
   autoFeeProblem,
@@ -210,7 +213,7 @@ function App() {
   const manualFeeSelections = useRef(new Set<string>());
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("current");
-  const errors = useMemo(() => validate(p), [p]);
+  const errors = useMemo(() => validateStoredPortfolio(p), [p]);
   const feeIssues = useMemo(
     () =>
       p.assets
@@ -218,7 +221,7 @@ function App() {
         .filter((issue): issue is string => !!issue),
     [p.assets, catalog, today],
   );
-  const planIssues = [...errors, ...feeIssues];
+  const planIssues = [...validate(p), ...feeIssues];
   const plans = useMemo(
     () => (Object.keys(modes) as Mode[]).map((m) => plan(p, m)),
     [p],
@@ -416,7 +419,7 @@ function App() {
             },
           }
         : parseBackup(text);
-      const issues = validate(data.portfolio);
+      const issues = validateStoredPortfolio(data.portfolio);
       if (issues.length) throw new Error(issues.join("；"));
       setImportSource(
         `${file.name} · ${csv ? "CSV 持倉（保留現金與快照）" : `備份格式 V${data.version}（載入後）`}`,
@@ -587,6 +590,34 @@ function App() {
             匯出持倉 CSV
           </button>
           <button onClick={demo}>載入示範</button>
+          <ResetPortfolio
+            blocked={blocked}
+            temporary={temporary}
+            count={p.assets.length}
+            canExport={errors.length === 0}
+            onExport={() => {
+              void exportBackup();
+            }}
+            onReset={() => {
+              // Invalidate in-flight imports as well as an already visible preview.
+              importSequence.current++;
+              setPending(null);
+              resetLookup();
+              setP(initialPortfolio());
+              setRecordState("actual");
+              setBeforeEstimate(undefined);
+              setShock({});
+              setMode("full");
+              setName("");
+              setCompareA("");
+              setCompareB("current");
+              setMessage(
+                "已清空目前輸入，歷史快照保留；請查看保存狀態後重新填寫。",
+              );
+              feedback.current?.focus({ preventScroll: true });
+              feedback.current?.scrollIntoView({ block: "center" });
+            }}
+          />
         </div>
         {incoming && (
           <section
@@ -619,7 +650,7 @@ function App() {
             <button
               className="primary"
               onClick={() => {
-                const issues = validate(incoming.portfolio);
+                const issues = validateStoredPortfolio(incoming.portfolio);
                 if (issues.length) {
                   setMessage(issues.join("；"));
                   return;
@@ -800,6 +831,7 @@ function App() {
             <small>正數投入 · 負數提領</small>
           </div>
         </section>
+        <Allocation portfolio={p} estimated={recordState === "estimate"} />
         <section className="panel">
           <div className="section-heading">
             <h2>

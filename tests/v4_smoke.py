@@ -23,7 +23,8 @@ with sync_playwright() as pw:
     original = page.evaluate('localStorage.getItem("433.portfolio.v1")')
     page.get_by_role('link', name=re.compile(r'^進入 V4 ')).click()
     assert page.get_by_label('現金餘額', exact=True).input_value() == '0'
-    assert page.locator('h2').count() == 5
+    assert page.locator('.section-heading h2 b').count() == 5
+    expect(page.get_by_role('heading', name='資產佔比', exact=True)).to_be_visible()
     # Preview V1 import, cancel, then explicitly import to the independent V4 key.
     def upload():
         page.locator('input[type=file]').set_input_files({'name':'v1.json','mimeType':'application/json','buffer':json.dumps(legacy).encode()})
