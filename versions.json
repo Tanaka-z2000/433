@@ -23,7 +23,7 @@
       "官方資料日期、來源及失效保護",
       "附財務資料字典的 JSON 與持倉 CSV 交換"
     ],
-    "release": "4.1.0",
+    "release": "4.1.1",
     "compatibility": "可匯入新舊 JSON 與持倉 CSV；新匯出附幣別、單位與資料狀態。其他系統須對應欄位。",
     "temporary": true
   }

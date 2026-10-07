@@ -197,3 +197,7 @@ V1 的程式維持原始對照，包括既有半分錢費用取整差異；日�
 預設持倉 CSV 在原十二欄後增加 `formatVersion,currency,quantityUnit,priceUnit,rateUnit,recordType`。接受完整欄位重排，拒絕重複／未知欄位、未知版本、非 TWD、張數單位、比例小數及混合實際／估計部位。CSV 的 `estimated_holdings` 匯入後維持待成交核對；匯入實際持倉也不會自行清除原本待核對狀態。只有表頭的空白持倉 CSV 不攜帶來源狀態，保留目的端狀態。CSV 仍只替換持倉；要完整保存時間、快照、商品資訊與現金，請用 JSON。
 
 方案 CSV 另標示 `rebalance_plan_not_executed`、TWD 與股數單位，仍是尚未成交的試算報表，不能當成持倉匯入。其他系統須明確對應本專案欄位，不能因為支援 JSON／CSV 就宣稱可直接匯入。格式指南可從頁面下載，也可讀取 [財務欄位定義](public/data/finance-format-v1.json)。完整相容性與測試紀錄見 [財務交換建置紀錄](FINANCE_INTERCHANGE.md)。
+
+## V4 4.1.1 發散壓力修正
+
+修正本機還原／示範預覽期間的快照清單覆蓋、特殊 ID 對情境及快照比較的影響、CSV 預覽的核對狀態競爭，以及頁尾版號同步。JSON 備份新增 64 層結構限制，過深的受損資料會停止保存並保留原始備援，不讓頁面因序列化堆疊溢位而空白。詳細重現、壓力規模與限制見 [發散壓力驗證紀錄](ADVERSARIAL_AUDIT.md)。
