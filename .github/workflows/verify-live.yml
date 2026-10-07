@@ -1,0 +1,41 @@
+name: Verify live website
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/verify-live.yml"
+      - "tests/live_audit.py"
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright==1.62.0
+      - run: python -m playwright install --with-deps chromium
+      - name: Exercise deployed portal, V1 and V2
+        env:
+          PORTAL_URL: https://tanaka-z2000.github.io/433/
+          PORTFOLIO_URL: https://tanaka-z2000.github.io/433/versions/v1/
+        run: |
+          export CHROMIUM_PATH="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          python tests/portal_smoke.py
+          python tests/browser_smoke.py
+          python tests/v2_smoke.py
+      - name: Independent live calculation and storage audit
+        if: always()
+        env:
+          PORTAL_URL: https://tanaka-z2000.github.io/433/
+        run: |
+          export CHROMIUM_PATH="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          python tests/live_audit.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-verification-evidence
+          path: test-results/
