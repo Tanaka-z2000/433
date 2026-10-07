@@ -48,6 +48,23 @@ export function parseBackup(text: string): Backup {
     new TextEncoder().encode(text).byteLength > BACKUP_LIMIT_BYTES
   )
     throw new Error("JSON 備份超過 32 MiB");
+  // JSON.parse accepts depths that JSON.stringify/React cannot safely handle.
+  // Bound structure without treating braces inside strings as nesting.
+  let depth = 0,
+    quoted = false,
+    escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === "{" || char === "[") {
+      if (++depth > 64)
+        throw new Error("JSON 結構層級超過 64 層，請檢查備份格式");
+    } else if (char === "}" || char === "]") depth--;
+  }
   const document = JSON.parse(text.replace(/^\uFEFF/, ""));
   if (!document || typeof document !== "object" || Array.isArray(document))
     throw new Error("備份格式或版本不支援");

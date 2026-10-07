@@ -7,6 +7,11 @@ const builtAt = new Date().toISOString();
 const versions = readVersions(root);
 export default defineConfig({
   base: "./",
+  define: {
+    __V4_RELEASE__: JSON.stringify(
+      versions.find((v) => v.id === "v4")?.release ?? "未標記",
+    ),
+  },
   build: {
     rolldownOptions: {
       input: [

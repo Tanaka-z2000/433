@@ -32,18 +32,20 @@ export function scenarioComparison(
   if (
     r.errors.length ||
     p.assets.some(
-      (a) => !Number.isFinite(shocks[a.id] ?? 0) || (shocks[a.id] ?? 0) < -100,
+      (a) =>
+        !Number.isFinite(shockFor(shocks, a.id)) ||
+        shockFor(shocks, a.id) < -100,
     )
   )
     return null;
   // Both paths use the same contribution/withdrawal; only the adjusted path pays costs.
   const beforeBase = portfolioTotal(p) + p.flow;
   const beforeChange = p.assets.reduce(
-    (sum, a) => sum + (a.shares * a.price * (shocks[a.id] ?? 0)) / 100,
+    (sum, a) => sum + (a.shares * a.price * shockFor(shocks, a.id)) / 100,
     0,
   );
   const afterChange = r.trades.reduce(
-    (sum, t) => sum + (t.afterValue * (shocks[t.asset.id] ?? 0)) / 100,
+    (sum, t) => sum + (t.afterValue * shockFor(shocks, t.asset.id)) / 100,
     0,
   );
   const result = {
@@ -56,6 +58,8 @@ export function scenarioComparison(
   };
   return Object.values(result).every(Number.isFinite) ? result : null;
 }
+export const shockFor = (shocks: Record<string, number>, id: string): number =>
+  Object.hasOwn(shocks, id) ? shocks[id] : 0;
 export function compareHoldings(a: Portfolio, b: Portfolio) {
   // CSV imports regenerate IDs. Compare by ticker, not transient UI ID.
   const tickers = [

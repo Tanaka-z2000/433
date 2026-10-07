@@ -47,6 +47,7 @@ import {
   projectedPortfolio,
   maxDeviation,
   scenarioComparison,
+  shockFor,
   compareHoldings,
   tradeExplanation,
 } from "./analysis";
@@ -189,7 +190,10 @@ function App() {
   const [digest, setDigest] = useState("");
   const [importSource, setImportSource] = useState("");
   const importSequence = useRef(0);
-  const [pendingCSV, setPendingCSV] = useState(false);
+  const [pendingKind, setPendingKind] = useState<
+    "backup" | "csv" | "portfolio"
+  >("backup");
+  const pendingCSV = pendingKind === "csv";
   const [lookupRevision, setLookupRevision] = useState(0);
   const manualFeeSelections = useRef(new Set<string>());
   const [compareA, setCompareA] = useState("");
@@ -233,7 +237,14 @@ function App() {
             pending.state === "estimate" ? ("estimate" as const) : backup.state,
           portfolio: { ...p, assets: pending.portfolio.assets },
         }
-      : pending;
+      : pending && pendingKind === "portfolio"
+        ? {
+            ...backup,
+            portfolio: pending.portfolio,
+            state: pending.state ?? "actual",
+            beforeEstimate: pending.beforeEstimate,
+          }
+        : pending;
   const resetLookup = () => {
     setLookupRevision((revision) => revision + 1);
     manualFeeSelections.current.clear();
@@ -366,14 +377,14 @@ function App() {
   const to =
     compareB === "current"
       ? p
-      : snapshots.find((s) => s.id === compareB)?.portfolio;
+      : snapshots.find((s) => `snapshot:${s.id}` === compareB)?.portfolio;
   const targetSum =
     (p.cashTarget ?? 0) + p.assets.reduce((sum, a) => sum + (a.target ?? 0), 0);
   async function importFile(file: File | undefined) {
     if (!file) return;
     const sequence = ++importSequence.current;
     setPending(null);
-    setPendingCSV(false);
+    setPendingKind("backup");
     try {
       const csv = file.name.toLowerCase().endsWith(".csv");
       if (file.size > (csv ? 8_000_000 : BACKUP_LIMIT_BYTES))
@@ -384,10 +395,9 @@ function App() {
       const data = holdings
         ? {
             ...latestBackup.current,
-            state:
-              holdings.state === "estimate"
-                ? ("estimate" as const)
-                : latestBackup.current.state,
+            // Only carry the source state. The receiver's current state is
+            // combined at confirmation, not captured during async file reading.
+            state: holdings.state,
             portfolio: {
               ...latestBackup.current.portfolio,
               assets: holdings.assets,
@@ -399,7 +409,7 @@ function App() {
       setImportSource(
         `${file.name} · ${csv ? "CSV 持倉（保留現金與快照）" : `備份格式 V${data.version}（載入後）`}`,
       );
-      setPendingCSV(csv);
+      setPendingKind(csv ? "csv" : "backup");
       setPending(data);
     } catch (e) {
       if (sequence === importSequence.current)
@@ -423,7 +433,7 @@ function App() {
           }
         : { ...asset, feeMode: "manual" };
     };
-    setPendingCSV(false);
+    setPendingKind("portfolio");
     setPending({
       version: 3,
       portfolio: {
@@ -708,7 +718,9 @@ function App() {
               {fmt(incoming.portfolio.settlement)} 元。載入會取代 V4
               {pendingCSV
                 ? "的持倉；現金、交割款與快照以確認當下內容保留。"
-                : "目前輸入與清單。"}
+                : pendingKind === "portfolio"
+                  ? "目前持倉與設定；快照清單以確認當下內容保留。"
+                  : "目前輸入與清單。"}
               其他版本的保存資料保留。建議先匯出目前內容。
             </p>
             <button
@@ -1353,7 +1365,7 @@ function App() {
               <NumberField
                 key={a.id}
                 label={`${a.ticker || "標的"} 漲跌 %`}
-                value={shock[a.id] ?? 0}
+                value={shockFor(shock, a.id)}
                 onChange={(n) => setShock({ ...shock, [a.id]: n! })}
               />
             ))}
@@ -1466,7 +1478,7 @@ function App() {
                       目前畫面 · {recordLabels[recordState]}
                     </option>
                     {snapshots.map((s) => (
-                      <option key={s.id} value={s.id}>
+                      <option key={s.id} value={`snapshot:${s.id}`}>
                         {s.name} · {recordLabels[s.kind ?? "legacy"]}
                       </option>
                     ))}
@@ -1572,7 +1584,7 @@ function App() {
                         setImportSource(
                           `還原快照：${s.name} · ${recordLabels[s.kind ?? "legacy"]}`,
                         );
-                        setPendingCSV(false);
+                        setPendingKind("portfolio");
                         setPending({
                           ...backup,
                           portfolio: structuredClone(s.portfolio),
@@ -1602,7 +1614,7 @@ function App() {
           )}
         </section>
         <footer>
-          433 · V4 台股標的版 · 4.0.1
+          433 · V4 台股標的版 · {__V4_RELEASE__}
           <br />
           <span>
             資料保存在目前瀏覽器，不上傳持倉。定期匯出備份，以便更換裝置。
