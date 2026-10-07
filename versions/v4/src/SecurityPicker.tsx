@@ -73,7 +73,9 @@ export function SecurityPicker({
         : exactNameMatches(catalog, value);
     if (matches.length === 1) select(matches[0]);
     else {
-      fresh.current = false;
+      // A typo or a slow catalog is not an explicit choice of manual fees.
+      // Keep the first-match intent until a real selection; fee edits are
+      // independently protected by allowInitialFees.
       setField(null);
       setFeedback(
         matches.length > 1

@@ -13,36 +13,6 @@
     ]
   },
   {
-    "id": "v2",
-    "title": "日常操作版",
-    "status": "preview",
-    "description": "更清楚地保存資料、比較方案，並在成交後核對持倉。",
-    "features": [
-      "保存狀態、容量與匯出提醒",
-      "三種方案與調整前後情境比較",
-      "實際持倉、試算與待核對標記",
-      "快照差異與 V1 備份匯入"
-    ],
-    "release": "2.0.0",
-    "compatibility": "可手動匯入 V1 JSON；V2 資料獨立保存。V2 備份請由 V2 讀取。",
-    "temporary": true
-  },
-  {
-    "id": "v3",
-    "title": "檢核修正版",
-    "status": "preview",
-    "description": "修正費用取整與保存狀態，強化匯入防護，經大量交易與瀏覽器壓力驗證。",
-    "features": [
-      "十進位費用計算，修正半分錢邊界",
-      "保存狀態復原與分頁衝突防護",
-      "100 標的、50 快照與連續輸入驗證",
-      "支援手動匯入 V1／V2 備份"
-    ],
-    "release": "3.0.0",
-    "compatibility": "可手動匯入 V1／V2 JSON；V3 獨立保存，原有版本與資料保留。",
-    "temporary": true
-  },
-  {
     "id": "v4",
     "title": "台股標的版",
     "status": "preview",
@@ -53,7 +23,7 @@
       "官方資料日期、來源及失效保護",
       "V1–V3 JSON 匯入與名稱備份"
     ],
-    "release": "4.0.0",
+    "release": "4.0.1",
     "compatibility": "可手動匯入 V1–V3 JSON；V4 獨立保存，備份結構版本 3 請由 V4 讀取。",
     "temporary": true
   }

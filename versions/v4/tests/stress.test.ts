@@ -42,7 +42,7 @@ function fixture(count = 10): Portfolio {
     })),
   };
 }
-describe("V3 stress and boundary regressions", () => {
+describe("V4 stress and boundary regressions", () => {
   it("rejects offsetting huge amounts before floating point loses holdings", () => {
     const p = fixture(2);
     p.cash = 1e307;

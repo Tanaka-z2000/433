@@ -18,6 +18,11 @@ with sync_playwright() as p:
     page.goto(base, wait_until='networkidle')
     assert page.get_by_role('heading', name='可使用的版本').is_visible()
     assert page.locator('.version-card').count() == len(json.loads(Path('versions.json').read_text()))
+    assert [v['id'] for v in json.loads(Path('versions.json').read_text())] == ['v1', 'v4']
+    assert page.locator('.version-card .enter').evaluate_all('(links)=>links.map(a=>a.getAttribute("href"))') == ['./versions/v1/','./versions/v4/']
+    for retired in ['v2','v3']:
+        response = page.request.get(base+f'versions/{retired}/?retired-check='+page.locator('meta[name=build-id]').get_attribute('content'))
+        assert response.status == 404, f'{retired} unexpectedly still published: {response.status}'
     page.evaluate('(backup) => {localStorage.setItem("433.portfolio.v1", JSON.stringify(backup)); localStorage.setItem("433.portfolio.v2", "other-version-marker");}', backup)
     original = page.evaluate('localStorage.getItem("433.portfolio.v1")')
     page.reload(wait_until='networkidle')

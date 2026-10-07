@@ -74,6 +74,11 @@ jobs:
                 if (!releaseResponse.ok) throw new Error('Release manifest not visible yet');
                 const release = await releaseResponse.json();
                 if (release.commit !== context.sha) throw new Error('Previous deployment still visible');
+                if (JSON.stringify(release.versions.map(version => version.id)) !== '["v1","v4"]') throw new Error('Expected only V1 and V4');
+                for (const retired of ['v2', 'v3']) {
+                  const removed = await fetch(fresh('versions/' + retired + '/'), { cache: 'no-store' });
+                  if (removed.status !== 404) throw new Error('Retired version still published: ' + retired);
+                }
                 const portal = await fetch(fresh(''), { cache: 'no-store' });
                 const portalHTML = await portal.text();
                 if (!portal.ok || !portalHTML.includes('可使用的版本')) throw new Error('Portal unavailable');

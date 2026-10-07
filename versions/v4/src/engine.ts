@@ -61,6 +61,8 @@ export interface Plan {
 export const money = (n: number) => roundMoney(decimal(n));
 const finite = (n: unknown): n is number =>
   typeof n === "number" && Number.isFinite(n);
+export const normalizeTicker = (ticker: string) =>
+  ticker.normalize("NFKC").trim().toUpperCase();
 export function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
     return false;
@@ -101,11 +103,11 @@ export function validate(p: Portfolio): string[] {
     ids.add(a.id);
     if (
       typeof a.ticker !== "string" ||
-      !a.ticker.trim() ||
-      tickers.has(a.ticker.trim())
+      !normalizeTicker(a.ticker) ||
+      tickers.has(normalizeTicker(a.ticker))
     )
       errors.push("標的代號不可重複或空白");
-    if (typeof a.ticker === "string") tickers.add(a.ticker.trim());
+    if (typeof a.ticker === "string") tickers.add(normalizeTicker(a.ticker));
     for (const [key, maxLength] of [
       ["name", 300],
       ["shortName", 100],
@@ -213,7 +215,9 @@ export function meetsPrinciples(p: Portfolio, r: Plan): boolean {
     r.errors.length === 0 &&
     r.afterTotal > 0 &&
     r.cash + 0.01 >= (r.afterTotal * p.cashFloor) / 100 &&
-    r.trades.some((t) => t.asset.ticker === "00662" && t.afterValue > 0) &&
+    r.trades.some(
+      (t) => normalizeTicker(t.asset.ticker) === "00662" && t.afterValue > 0,
+    ) &&
     r.trades.some((t) => t.asset.kind === "leverage" && t.afterValue > 0)
   );
 }
@@ -318,7 +322,9 @@ export function plan(p: Portfolio, mode: Mode): Plan {
       `現金低於下限，仍差 ${money((result.afterTotal * p.cashFloor) / 100 - cash).toLocaleString()} 元。請增加投入或放寬賣出／目標限制。`,
     );
   if (
-    !result.trades.some((t) => t.asset.ticker === "00662" && t.afterValue > 0)
+    !result.trades.some(
+      (t) => normalizeTicker(t.asset.ticker) === "00662" && t.afterValue > 0,
+    )
   )
     result.notes.push("尚未符合持有 00662 的配置原則。");
   if (

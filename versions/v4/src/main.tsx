@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   blankAsset,
+  normalizeTicker,
   standardFees,
   initialPortfolio,
   meetsPrinciples,
@@ -188,6 +189,8 @@ function App() {
   const [digest, setDigest] = useState("");
   const [importSource, setImportSource] = useState("");
   const importSequence = useRef(0);
+  const [pendingCSV, setPendingCSV] = useState(false);
+  const [lookupRevision, setLookupRevision] = useState(0);
   const manualFeeSelections = useRef(new Set<string>());
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("current");
@@ -218,6 +221,18 @@ function App() {
     }),
     [p, snapshots, evidence, recordState, beforeEstimate, exported],
   );
+  const latestBackup = useRef(backup);
+  latestBackup.current = backup;
+  // CSV replaces holdings only, including when other fields change during
+  // asynchronous file reading or while its confirmation preview is open.
+  const incoming =
+    pending && pendingCSV
+      ? { ...backup, portfolio: { ...p, assets: pending.portfolio.assets } }
+      : pending;
+  const resetLookup = () => {
+    setLookupRevision((revision) => revision + 1);
+    manualFeeSelections.current.clear();
+  };
   const serialized = useMemo(() => JSON.stringify(backup), [backup]);
   const coreContent = useMemo(() => backupContent(backup), [backup]);
   const persistence = usePersistence(
@@ -353,6 +368,7 @@ function App() {
     if (!file) return;
     const sequence = ++importSequence.current;
     setPending(null);
+    setPendingCSV(false);
     try {
       const csv = file.name.toLowerCase().endsWith(".csv");
       if (file.size > (csv ? 8_000_000 : BACKUP_LIMIT_BYTES))
@@ -360,13 +376,20 @@ function App() {
       const text = await file.text();
       if (sequence !== importSequence.current) return;
       const data = file.name.toLowerCase().endsWith(".csv")
-        ? { ...backup, portfolio: { ...p, assets: parseCSV(text) } }
+        ? {
+            ...latestBackup.current,
+            portfolio: {
+              ...latestBackup.current.portfolio,
+              assets: parseCSV(text),
+            },
+          }
         : parseBackup(text);
       const issues = validate(data.portfolio);
       if (issues.length) throw new Error(issues.join("；"));
       setImportSource(
         `${file.name} · ${file.name.toLowerCase().endsWith(".csv") ? "CSV 持倉（保留現金與快照）" : `備份格式 V${JSON.parse(text).version}`}`,
       );
+      setPendingCSV(csv);
       setPending(data);
     } catch (e) {
       if (sequence === importSequence.current)
@@ -390,6 +413,7 @@ function App() {
           }
         : { ...asset, feeMode: "manual" };
     };
+    setPendingCSV(false);
     setPending({
       version: 3,
       portfolio: {
@@ -589,6 +613,7 @@ function App() {
                 <button
                   onClick={() => {
                     if (confirm("回到套用前持倉？目前核對中的修改將被取代。")) {
+                      resetLookup();
                       setP(beforeEstimate);
                       setBeforeEstimate(undefined);
                       setRecordState("actual");
@@ -638,31 +663,46 @@ function App() {
             </button>
           </div>
         )}
-        {pending && (
+        {incoming && (
           <section className="notice">
             <h3>匯入預覽／確認載入資料</h3>
             <p>{importSource}</p>
             <p>
-              快照 {pending.snapshots.length} 份 · 最近匯出{" "}
-              {dateText(pending.exported?.at)} · 載入後狀態：
-              {pending.state === "estimate" ? "待成交核對" : "使用者持倉"}
+              快照 {incoming.snapshots.length} 份 · 最近匯出{" "}
+              {dateText(incoming.exported?.at)} · 載入後狀態：
+              {incoming.state === "estimate" ? "待成交核對" : "使用者持倉"}
             </p>
             <p>
-              {pending.portfolio.assets.length} 個標的，現金{" "}
-              {fmt(pending.portfolio.cash)} 元，交割款{" "}
-              {fmt(pending.portfolio.settlement)} 元。載入會取代 V4
-              目前輸入與清單，V1、V2、V3 資料不受影響。建議先匯出目前內容。
+              {incoming.portfolio.assets.length} 個標的，現金{" "}
+              {fmt(incoming.portfolio.cash)} 元，交割款{" "}
+              {fmt(incoming.portfolio.settlement)} 元。載入會取代 V4
+              {pendingCSV
+                ? "的持倉；現金、交割款與快照以確認當下內容保留。"
+                : "目前輸入與清單。"}
+              其他版本的保存資料保留。建議先匯出目前內容。
             </p>
             <button
               className="primary"
               onClick={() => {
-                setP(pending.portfolio);
-                setSnapshots(pending.snapshots);
-                setEvidence(pending.evidence);
+                const issues = validate(incoming.portfolio);
+                if (issues.length) {
+                  setMessage(issues.join("；"));
+                  return;
+                }
+                try {
+                  serializeBackup(incoming, 1024);
+                } catch (error) {
+                  setMessage((error as Error).message);
+                  return;
+                }
+                resetLookup();
+                setP(incoming.portfolio);
+                setSnapshots(incoming.snapshots);
+                setEvidence(incoming.evidence);
                 setPending(null);
-                setRecordState(pending.state ?? "actual");
-                setBeforeEstimate(pending.beforeEstimate);
-                setExported(pending.exported);
+                setRecordState(incoming.state ?? "actual");
+                setBeforeEstimate(incoming.beforeEstimate);
+                setExported(incoming.exported);
                 setShock({});
                 setMessage("已載入資料，請查看保存狀態。");
               }}
@@ -867,6 +907,7 @@ function App() {
                 </div>
                 <div className="asset-fields">
                   <SecurityPicker
+                    key={`${lookupRevision}:${a.id}`}
                     asset={a}
                     catalog={catalog}
                     allowInitialFees={!manualFeeSelections.current.has(a.id)}
@@ -1286,7 +1327,7 @@ function App() {
           {!scenario ? (
             <p className="notice">
               請先完成有效持倉、目標與費率核對；漲跌幅須為有效數字且不得低於
-              -100%。
+              -100%，且計算結果不得超出數值範圍。
             </p>
           ) : (
             <div className="table-scroll scenario-table">
@@ -1423,10 +1464,13 @@ function App() {
                             <td>
                               {row.ticker}
                               <small className="security-name table-security-name">
-                                {to.assets.find((a) => a.ticker === row.ticker)
-                                  ?.name ??
+                                {to.assets.find(
+                                  (a) =>
+                                    normalizeTicker(a.ticker) === row.ticker,
+                                )?.name ??
                                   from.portfolio.assets.find(
-                                    (a) => a.ticker === row.ticker,
+                                    (a) =>
+                                      normalizeTicker(a.ticker) === row.ticker,
                                   )?.name}
                               </small>
                             </td>
@@ -1494,6 +1538,7 @@ function App() {
                         setImportSource(
                           `還原快照：${s.name} · ${recordLabels[s.kind ?? "legacy"]}`,
                         );
+                        setPendingCSV(false);
                         setPending({
                           ...backup,
                           portfolio: structuredClone(s.portfolio),
@@ -1523,7 +1568,7 @@ function App() {
           )}
         </section>
         <footer>
-          433 · V4 台股標的版 · 4.0.0
+          433 · V4 台股標的版 · 4.0.1
           <br />
           <span>
             資料保存在目前瀏覽器，不上傳持倉。定期匯出備份，以便更換裝置。
