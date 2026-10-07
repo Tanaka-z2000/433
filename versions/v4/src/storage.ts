@@ -1,4 +1,5 @@
 import { type Asset, type Portfolio, type Plan, validate } from "./engine";
+import { CSV_CONTEXT, FINANCE_FORMAT } from "./interchange";
 export const KEY = "433.portfolio.v4";
 export const BACKUP_LIMIT_BYTES = 32 * 1024 * 1024;
 export function serializeBackup(backup: Backup, reserve = 0): string {
@@ -8,6 +9,11 @@ export function serializeBackup(backup: Backup, reserve = 0): string {
       "JSON 備份超過 32 MiB，請先整理快照或縮短過長文字；未刪除任何資料",
     );
   return text;
+}
+export function serializeFinancialBackup(backup: Backup, reserve = 0): string {
+  // Keep original data at the same paths; do not duplicate a second balance sheet.
+  const document = { ...backup, financeFormat: FINANCE_FORMAT };
+  return serializeBackup(document, reserve);
 }
 export type RecordKind = "actual" | "estimate" | "plan" | "legacy";
 export interface Snapshot {
@@ -42,7 +48,26 @@ export function parseBackup(text: string): Backup {
     new TextEncoder().encode(text).byteLength > BACKUP_LIMIT_BYTES
   )
     throw new Error("JSON 備份超過 32 MiB");
-  const x = JSON.parse(text) as Backup;
+  const document = JSON.parse(text.replace(/^\uFEFF/, ""));
+  if (!document || typeof document !== "object" || Array.isArray(document))
+    throw new Error("備份格式或版本不支援");
+  const { financeFormat, ...x } = document as Backup & {
+    financeFormat?: typeof FINANCE_FORMAT;
+  };
+  if ("financeFormat" in document) {
+    for (const key of [
+      "id",
+      "version",
+      "currency",
+      "market",
+      "quantityUnit",
+      "priceUnit",
+      "rateUnit",
+      "dateTimeFormat",
+    ] as const)
+      if (!financeFormat || financeFormat[key] !== FINANCE_FORMAT[key])
+        throw new Error(`財務交換格式的 ${key} 不支援；請確認版本、幣別及單位`);
+  }
   if (!x || ![1, 2, 3].includes(x.version) || !x.portfolio)
     throw new Error("備份格式或版本不支援");
   const errors = validate(x.portfolio);
@@ -140,6 +165,8 @@ const legacyColumns = [
   "sellTaxRate",
 ] as const;
 const columns = [...legacyColumns, "name", "shortName"] as const;
+const contextColumns = [...Object.keys(CSV_CONTEXT), "recordType"];
+const exchangeColumns = [...columns, ...contextColumns];
 const cell = (v: unknown) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
 // Escape apostrophes too so our new CSV format can undo exactly one prefix,
 // even when a name literally begins with an apostrophe. Spreadsheet programs
@@ -149,21 +176,38 @@ const needsEscape = (v: string) =>
 const safeText = (v: string) => (needsEscape(v) ? "'" + v : v);
 const originalText = (v: string) =>
   v.startsWith("'") && needsEscape(v.slice(1)) ? v.slice(1) : v;
-export function assetsCSV(assets: Asset[]) {
+export function assetsCSV(
+  assets: Asset[],
+  state: "actual" | "estimate" = "actual",
+) {
+  if (assets.length > 100) throw new Error("CSV 最多支援 100 個標的");
+  for (const a of assets)
+    for (const key of columns) {
+      const text = String(a[key] ?? "");
+      const value = ["ticker", "name", "shortName"].includes(key)
+        ? safeText(text)
+        : text;
+      if (value.length > 1024)
+        throw new Error(
+          "CSV 單一欄位超過 1024 字元，請縮短文字或改用 JSON 備份",
+        );
+    }
   return (
     "\uFEFF" +
     [
-      columns.join(","),
+      exchangeColumns.join(","),
       ...assets.map((a) =>
-        columns
-          .map((k) =>
+        [
+          ...columns.map((k) =>
             cell(
               ["ticker", "name", "shortName"].includes(k)
                 ? safeText(String(a[k] ?? ""))
                 : a[k],
             ),
-          )
-          .join(","),
+          ),
+          ...Object.values(CSV_CONTEXT).map(cell),
+          cell(state === "estimate" ? "estimated_holdings" : "actual_holdings"),
+        ].join(","),
       ),
     ].join("\r\n")
   );
@@ -172,20 +216,37 @@ export function tradesCSV(plan: Plan) {
   return (
     "\uFEFF" +
     [
-      ["標的", "買賣股數", "交易金額", "預估費用", "調後市值"],
+      [
+        "標的",
+        "買賣股數",
+        "交易金額",
+        "預估費用",
+        "調後市值",
+        "recordType",
+        "currency",
+        "quantityUnit",
+        "formatVersion",
+      ],
       ...plan.trades.map((t) => [
         safeText(t.asset.ticker),
         t.quantity,
         t.gross,
         t.cost,
         t.afterValue,
+        "rebalance_plan_not_executed",
+        "TWD",
+        "share",
+        "433-plan-1",
       ]),
     ]
       .map((row) => row.map(cell).join(","))
       .join("\r\n")
   );
 }
-export function parseCSV(text: string): Asset[] {
+export function parseHoldingsCSV(text: string): {
+  assets: Asset[];
+  state?: "actual" | "estimate";
+} {
   if (text.length > 8_000_000) throw new Error("CSV 超過 8 MB 限制");
   const rows: string[][] = [];
   let row: string[] = [],
@@ -194,7 +255,7 @@ export function parseCSV(text: string): Asset[] {
     closed = false;
   const endCell = () => {
     row.push(value);
-    if (row.length > columns.length) throw new Error("CSV 欄位數過多");
+    if (row.length > exchangeColumns.length) throw new Error("CSV 欄位數過多");
     value = "";
     closed = false;
   };
@@ -232,20 +293,46 @@ export function parseCSV(text: string): Asset[] {
     endCell();
     endRow();
   }
-  const header = rows.shift()?.join(",");
-  const activeColumns = header === columns.join(",") ? columns : legacyColumns;
-  if (header !== activeColumns.join(","))
+  const header = rows.shift() ?? [];
+  if (header.includes("買賣股數"))
+    throw new Error(
+      "這是尚未成交的交易方案 CSV，不能當作持倉；請選擇持倉 CSV 或 JSON 備份",
+    );
+  const matches = (expected: readonly string[]) =>
+    header.length === expected.length &&
+    new Set(header).size === header.length &&
+    expected.every((k) => header.includes(k));
+  const exchange = matches(exchangeColumns);
+  const activeColumns = exchange || matches(columns) ? columns : legacyColumns;
+  if (!exchange && !matches(activeColumns))
     throw new Error("CSV 欄位不符，請先匯出範本");
-  return rows
+  let state: "actual" | "estimate" | undefined;
+  const assets = rows
     .filter((r) => r.some(Boolean))
     .map((r, i) => {
-      if (r.length !== activeColumns.length)
+      if (r.length !== header.length)
         throw new Error(`第 ${i + 2} 列欄位數錯誤`);
+      if (exchange) {
+        for (const [key, value] of Object.entries(CSV_CONTEXT))
+          if (r[header.indexOf(key)] !== value)
+            throw new Error(
+              `第 ${i + 2} 列 ${key} 不支援；請確認格式、幣別及單位`,
+            );
+        const recordType = r[header.indexOf("recordType")];
+        if (!["actual_holdings", "estimated_holdings"].includes(recordType))
+          throw new Error(`第 ${i + 2} 列持倉狀態無效`);
+        const rowState =
+          recordType === "estimated_holdings" ? "estimate" : "actual";
+        if (state && state !== rowState)
+          throw new Error("CSV 不可混合實際與估計持倉");
+        state = rowState;
+      }
       const a: Record<string, unknown> = {
         id: crypto.randomUUID(),
         feeMode: "manual",
       };
-      activeColumns.forEach((k, j) => {
+      activeColumns.forEach((k) => {
+        const j = header.indexOf(k);
         if (["name", "shortName"].includes(k) && !r[j]) return;
         a[k] = ["ticker", "kind", "limit", "name", "shortName"].includes(k)
           ? activeColumns === columns &&
@@ -260,6 +347,10 @@ export function parseCSV(text: string): Asset[] {
       });
       return a as unknown as Asset;
     });
+  return { assets, state };
+}
+export function parseCSV(text: string): Asset[] {
+  return parseHoldingsCSV(text).assets;
 }
 
 export const SNAPSHOT_LIMIT = 50;

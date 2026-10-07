@@ -41,6 +41,7 @@ jobs:
           python tests/v4_audit.py
           python tests/v4_pressure.py
           python tests/v4_additional_stress.py
+          python tests/v4_interchange.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

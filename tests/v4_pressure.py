@@ -85,7 +85,9 @@ with sync_playwright() as pw:
             upload(exported_bytes);page.get_by_role('button',name='確認載入',exact=True).click()
             expect(panel).to_contain_text('已保存於此瀏覽器',timeout=15000)
             restored=page.evaluate('(key)=>JSON.parse(localStorage.getItem(key))',KEY)
-            check(f'Large JSON round-trip {i+1} preserves all records and estimate state',restored==exported and len(restored['snapshots'])==50 and len(restored['portfolio']['assets'])==100)
+            # The data dictionary travels in the file, not browser persistence.
+            expected={k:v for k,v in exported.items() if k!='financeFormat'}
+            check(f'Large JSON round-trip {i+1} preserves all records and estimate state',restored==expected and len(restored['snapshots'])==50 and len(restored['portfolio']['assets'])==100)
         baseline=page.evaluate('(key)=>localStorage.getItem(key)',KEY)
         invalids=[(b'null','null.json'),(b'{broken','broken.json'),(b'{"version":99}','future.json'),(b','*1_000_000,'columns.csv'),(b'a'*1_000_000,'field.csv'),(b'x'*(32*1024*1024+1),'oversize.json'),(b'x'*8_000_001,'oversize.csv')]
         duplicate=copy.deepcopy(exported);duplicate['portfolio']['assets'][1]['ticker']=duplicate['portfolio']['assets'][0]['ticker'];invalids.append((json.dumps(duplicate).encode(),'duplicate.json'))

@@ -15,7 +15,7 @@ import {
 import {
   KEY,
   parseBackup,
-  parseCSV,
+  parseHoldingsCSV,
   download,
   assetsCSV,
   tradesCSV,
@@ -27,7 +27,7 @@ import {
   digestContent,
   storageSize,
   BACKUP_LIMIT_BYTES,
-  serializeBackup,
+  serializeFinancialBackup,
 } from "./storage";
 import "./style.css";
 import { SecurityPicker } from "./SecurityPicker";
@@ -227,7 +227,12 @@ function App() {
   // asynchronous file reading or while its confirmation preview is open.
   const incoming =
     pending && pendingCSV
-      ? { ...backup, portfolio: { ...p, assets: pending.portfolio.assets } }
+      ? {
+          ...backup,
+          state:
+            pending.state === "estimate" ? ("estimate" as const) : backup.state,
+          portfolio: { ...p, assets: pending.portfolio.assets },
+        }
       : pending;
   const resetLookup = () => {
     setLookupRevision((revision) => revision + 1);
@@ -292,7 +297,7 @@ function App() {
     }
     try {
       // Leave space for the export timestamp and digest before duplicating data.
-      serializeBackup(
+      serializeFinancialBackup(
         { ...backup, ...changes, snapshots: [snapshot, ...snapshots] },
         1024,
       );
@@ -327,7 +332,7 @@ function App() {
       };
       download(
         `433-v4-${stamp.at.slice(0, 10)}.json`,
-        serializeBackup({ ...backup, exported: stamp }),
+        serializeFinancialBackup({ ...backup, exported: stamp }),
         "application/json",
       );
       setExported(stamp);
@@ -375,19 +380,24 @@ function App() {
         throw new Error(csv ? "CSV 檔案請小於 8 MB" : "JSON 檔案請小於 32 MiB");
       const text = await file.text();
       if (sequence !== importSequence.current) return;
-      const data = file.name.toLowerCase().endsWith(".csv")
+      const holdings = csv ? parseHoldingsCSV(text) : undefined;
+      const data = holdings
         ? {
             ...latestBackup.current,
+            state:
+              holdings.state === "estimate"
+                ? ("estimate" as const)
+                : latestBackup.current.state,
             portfolio: {
               ...latestBackup.current.portfolio,
-              assets: parseCSV(text),
+              assets: holdings.assets,
             },
           }
         : parseBackup(text);
       const issues = validate(data.portfolio);
       if (issues.length) throw new Error(issues.join("；"));
       setImportSource(
-        `${file.name} · ${file.name.toLowerCase().endsWith(".csv") ? "CSV 持倉（保留現金與快照）" : `備份格式 V${JSON.parse(text).version}`}`,
+        `${file.name} · ${csv ? "CSV 持倉（保留現金與快照）" : `備份格式 V${data.version}（載入後）`}`,
       );
       setPendingCSV(csv);
       setPending(data);
@@ -539,18 +549,38 @@ function App() {
             />
           </label>
           <button
-            onClick={() =>
-              download(
-                "433-holdings.csv",
-                assetsCSV(p.assets),
-                "text/csv;charset=utf-8",
-              )
-            }
+            disabled={!!errors.length}
+            onClick={() => {
+              try {
+                download(
+                  "433-holdings.csv",
+                  assetsCSV(p.assets, recordState),
+                  "text/csv;charset=utf-8",
+                );
+              } catch (error) {
+                setMessage(`匯出失敗：${(error as Error).message}`);
+              }
+            }}
           >
             匯出持倉 CSV
           </button>
           <button onClick={demo}>載入示範</button>
         </div>
+        <details className="notice">
+          <summary>匯出檔案與其他財務系統交換</summary>
+          <p>
+            JSON 包含完整備份與中英欄位說明；持倉 CSV
+            是可再匯入的表格，附幣別、股數單位、百分比及持倉狀態。兩者皆以新臺幣記錄，代號請以文字開啟，保留開頭的
+            0。
+          </p>
+          <p>
+            其他系統仍須對應欄位；歷史快照與估計方案不能重複加進目前資產。CSV
+            不含現金、交割款與快照，匯入後保留當下內容，費率視為手動；估計持倉不會自動變成實際持倉。
+          </p>
+          <a href="../../data/finance-format-v1.json" download>
+            下載財務欄位說明
+          </a>
+        </details>
         <aside className="storage-panel" aria-label="資料保存狀態">
           <p role="status">{persistence.status}</p>
           <div className="storage-facts">
@@ -690,7 +720,7 @@ function App() {
                   return;
                 }
                 try {
-                  serializeBackup(incoming, 1024);
+                  serializeFinancialBackup(incoming, 1024);
                 } catch (error) {
                   setMessage((error as Error).message);
                   return;
@@ -1284,6 +1314,10 @@ function App() {
                 >
                   匯出方案 CSV
                 </button>
+                <small>
+                  方案 CSV 是未成交試算報表；需要可匯回的資料請用持倉 CSV 或
+                  JSON。
+                </small>
                 <button
                   disabled={
                     recordState === "estimate" ||
