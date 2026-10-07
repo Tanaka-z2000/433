@@ -3,11 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101e2e" />
-    <title>資產再配置｜433</title>
+    <meta name="theme-color" content="#153c36" />
+    <title>433｜版本入口</title>
+    <link rel="stylesheet" href="./portal.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <header class="site-header">
+      <a class="brand" href="./">433 <span>資產再配置</span></a
+      ><span class="header-label">版本入口</span>
+    </header>
+    <main>
+      <section class="intro">
+        <div class="eyebrow">你的配置工具，每個版本都保留。</div>
+        <h1>選擇熟悉的版本，<br />或探索新的做法。</h1>
+        <p>
+          原始版持續保留。後續的改版會以獨立網頁加入這裡，<br
+            class="desktop-break"
+          />你可以自行選擇，不必改變原本的使用習慣。
+        </p>
+      </section>
+      <section aria-labelledby="versions-heading">
+        <div class="section-title">
+          <h2 id="versions-heading">可使用的版本</h2>
+          <span>各版本獨立開啟</span>
+        </div>
+        <div class="version-grid"><!-- VERSION_CARDS --></div>
+      </section>
+      <aside class="future">
+        <span class="future-symbol" aria-hidden="true">＋</span>
+        <div>
+          <h2>下一個版本，之後見。</h2>
+          <p><!-- FUTURE_NOTE --></p>
+        </div>
+      </aside>
+      <section class="data-note" aria-labelledby="data-heading">
+        <h2 id="data-heading">資料跟著版本走</h2>
+        <p>
+          原始版會沿用你先前在這個網站保存的持倉與快照。未來各版本分開保存資料，試用新版不會覆蓋原始版；需要搬移時，可使用
+          JSON 備份匯入。
+        </p>
+        <p>資料仍保存在目前的瀏覽器，尚未提供跨裝置同步。</p>
+      </section>
+    </main>
+    <footer>433 · 個人資產再配置<span>保留選擇，慢慢調整。</span></footer>
   </body>
 </html>

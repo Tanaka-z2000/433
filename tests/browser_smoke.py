@@ -7,7 +7,7 @@ with sync_playwright() as p:
     page=browser.new_page(viewport={'width':1440,'height':1000})
     errors=[]
     page.on('pageerror', lambda e: errors.append(str(e)))
-    page.goto(os.environ.get('PORTFOLIO_URL','http://127.0.0.1:8001'),wait_until='networkidle')
+    page.goto(os.environ.get('PORTFOLIO_URL','http://127.0.0.1:8001/versions/v1/'),wait_until='networkidle')
     page.get_by_role('button',name='載入示範',exact=True).click()
     page.get_by_role('button',name='確認載入',exact=True).click()
     page.get_by_role('heading',name='03 調整方案').wait_for()
