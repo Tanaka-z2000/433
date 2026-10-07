@@ -803,3 +803,12 @@ td.explanation {
     padding: 12px;
   }
 }
+
+.import-preview h3 {
+  scroll-margin-top: 16px;
+}
+.import-preview h3:focus-visible,
+.status:focus-visible {
+  outline: 3px solid #43a59a;
+  outline-offset: 3px;
+}
